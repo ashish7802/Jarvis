@@ -38,8 +38,6 @@ class TextToSpeechService:
         if not selected_voice:
             raise SpeechError("invalid configuration")
         logger.info("voice selected", extra={"voice": selected_voice})
-        if selected_voice not in self._default_voices():
-            raise SpeechError("unsupported voice")
 
         cache_key = (text.strip(), selected_voice, rate or self._settings.edge_tts_rate, volume or self._settings.edge_tts_volume, pitch or self._settings.edge_tts_pitch, file_format)
         cached_bytes = self._cache.get(text.strip(), voice=selected_voice, rate=rate or self._settings.edge_tts_rate, volume=volume or self._settings.edge_tts_volume, pitch=pitch or self._settings.edge_tts_pitch, file_format=file_format)
@@ -96,7 +94,12 @@ class TextToSpeechService:
     async def _collect_audio(self, communicate: Any) -> bytes:
         chunks: list[bytes] = []
         async for chunk in communicate.stream():
-            chunks.append(chunk)
+            if isinstance(chunk, bytes):
+                chunks.append(chunk)
+            elif isinstance(chunk, dict) and chunk.get("type") == "audio":
+                data = chunk.get("data")
+                if isinstance(data, (bytes, bytearray)):
+                    chunks.append(bytes(data))
         return b"".join(chunks)
 
     def _default_voices(self) -> list[str]:

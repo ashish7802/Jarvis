@@ -19,29 +19,54 @@ from backend.voice.voice_pipeline import VoicePipeline
 from backend.voice.wake_service import WakeService
 
 
+_llm_service: LLMService | None = None
+_transcription_service: TranscriptionService | None = None
+_tts_service: TextToSpeechService | None = None
+_wake_service: WakeService | None = None
+_voice_controller: VoiceController | None = None
+_conversation_manager = ConversationManager(max_history=10)
+_prompt_manager = PromptManager()
+_intent_detector = IntentDetector()
+_confidence_engine = ConfidenceEngine()
+
+
 def get_llm_service() -> LLMService:
-    """Create an LLM service instance for dependency injection."""
-    return LLMService()
+    global _llm_service
+    if _llm_service is None:
+        _llm_service = LLMService()
+    return _llm_service
 
 
 def get_transcription_service() -> TranscriptionService:
-    """Create a transcription service instance for dependency injection."""
-    return TranscriptionService()
+    global _transcription_service
+    if _transcription_service is None:
+        _transcription_service = TranscriptionService()
+    return _transcription_service
 
 
 def get_tts_service() -> TextToSpeechService:
-    """Create a text-to-speech service instance for dependency injection."""
-    return TextToSpeechService()
+    global _tts_service
+    if _tts_service is None:
+        _tts_service = TextToSpeechService()
+    return _tts_service
 
 
 def get_wake_service() -> WakeService:
-    """Create a wake word service instance for dependency injection."""
-    return WakeService()
+    global _wake_service
+    if _wake_service is None:
+        _wake_service = WakeService()
+    return _wake_service
 
 
 def get_voice_controller() -> VoiceController:
-    """Create a voice controller for dependency injection."""
-    return VoiceController(pipeline=VoicePipeline())
+    global _voice_controller
+    if _voice_controller is None:
+        _voice_controller = VoiceController(pipeline=VoicePipeline())
+    return _voice_controller
+
+
+def get_conversation_manager() -> ConversationManager:
+    return _conversation_manager
 
 
 router = APIRouter()
@@ -72,27 +97,27 @@ async def llm_health(service: LLMService = Depends(get_llm_service)) -> dict[str
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, service: LLMService = Depends(get_llm_service)) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    service: LLMService = Depends(lambda: globals()["get_llm_service"]()),
+    conversation: ConversationManager = Depends(lambda: globals()["get_conversation_manager"]()),
+) -> ChatResponse:
     """Handle a standard chat request with intent and confidence analysis."""
     settings = get_settings()
-    prompt_manager = PromptManager()
-    detector = IntentDetector()
-    confidence_engine = ConfidenceEngine()
-    conversation = ConversationManager(max_history=8)
-    conversation.add_user_message(request.message)
+    intent = await _intent_detector.detect(request.message)
+    confidence = await _confidence_engine.evaluate(request.message, intent)
 
-    intent = await detector.detect(request.message)
-    confidence = await confidence_engine.evaluate(request.message, intent)
-
-    system_prompt = prompt_manager.get_prompt("system")
-    developer_prompt = prompt_manager.get_prompt("developer")
-    assistant_prompt = prompt_manager.get_prompt("assistant")
+    system_prompt = _prompt_manager.get_prompt("system")
+    developer_prompt = _prompt_manager.get_prompt("developer")
+    assistant_prompt = _prompt_manager.get_prompt("assistant")
     conversation.set_system_prompt(f"{system_prompt}\n{developer_prompt}\n{assistant_prompt}")
 
-    prompt = f"{conversation.build_messages()[-1]['content']}\n\nUser: {request.message}"
+    conversation.add_user_message(request.message)
+    messages = conversation.build_messages()
+
     try:
         content = await service.generate_completion(
-            prompt,
+            messages,
             model=request.model or settings.default_model,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
@@ -101,7 +126,7 @@ async def chat(request: ChatRequest, service: LLMService = Depends(get_llm_servi
     except Exception:
         content = "I’m unable to respond right now because the provider is unavailable."
 
-    if confidence.uncertainty and intent.intent in {"command", "conversation"}:
+    if confidence.uncertainty and intent.intent in {"command", "conversation"} and confidence.score < 0.3:
         content = "I can help with that, but I need a bit more detail to respond precisely."
 
     conversation.add_assistant_message(content)
@@ -109,30 +134,45 @@ async def chat(request: ChatRequest, service: LLMService = Depends(get_llm_servi
         content=content,
         intent=intent,
         confidence=confidence,
-        provider="groq",
+        provider=getattr(getattr(service, "_provider", None), "name", "groq"),
         model=request.model or settings.default_model,
         metadata={"stream": request.stream},
     )
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest, service: LLMService = Depends(get_llm_service)) -> StreamingResponse:
+async def chat_stream(
+    request: ChatRequest,
+    service: LLMService = Depends(lambda: globals()["get_llm_service"]()),
+    conversation: ConversationManager = Depends(lambda: globals()["get_conversation_manager"]()),
+) -> StreamingResponse:
     """Stream chat chunks back to the client."""
     settings = get_settings()
 
+    system_prompt = _prompt_manager.get_prompt("system")
+    developer_prompt = _prompt_manager.get_prompt("developer")
+    assistant_prompt = _prompt_manager.get_prompt("assistant")
+    conversation.set_system_prompt(f"{system_prompt}\n{developer_prompt}\n{assistant_prompt}")
+    conversation.add_user_message(request.message)
+    messages = conversation.build_messages()
+
     async def generator() -> None:
+        full_text = []
         try:
-            chunks = await service.stream_tokens(
-                request.message,
+            async for chunk in service.stream_tokens(
+                messages,
                 model=request.model or settings.default_model,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
                 top_p=request.top_p,
-            )
-            for chunk in chunks:
+            ):
+                if chunk.content:
+                    full_text.append(chunk.content)
                 yield f"data: {chunk.model_dump_json()}\n\n"
         except Exception:
             yield "data: {\"content\": \"\", \"done\": true}\n\n"
+        if full_text:
+            conversation.add_assistant_message("".join(full_text))
 
     return StreamingResponse(generator(), media_type="text/event-stream")
 
@@ -140,17 +180,14 @@ async def chat_stream(request: ChatRequest, service: LLMService = Depends(get_ll
 @router.post("/chat/intent", response_model=IntentResult)
 async def chat_intent(request: ChatRequest) -> IntentResult:
     """Return the detected intent for a message."""
-    detector = IntentDetector()
-    return await detector.detect(request.message)
+    return await _intent_detector.detect(request.message)
 
 
 @router.post("/chat/clarify", response_model=ConfidenceResult)
 async def chat_clarify(request: ChatRequest) -> ConfidenceResult:
     """Return a conservative confidence signal for ambiguous messages."""
-    detector = IntentDetector()
-    confidence_engine = ConfidenceEngine()
-    intent = await detector.detect(request.message)
-    confidence = await confidence_engine.evaluate(request.message, intent)
+    intent = await _intent_detector.detect(request.message)
+    confidence = await _confidence_engine.evaluate(request.message, intent)
     if confidence.score < 0.5:
         return ConfidenceResult(score=confidence.score, reason="Please clarify your request so I can respond accurately.", uncertainty=True)
     return confidence
@@ -164,7 +201,10 @@ async def list_models() -> dict[str, list[str]]:
 
 
 @router.post("/voice/transcribe", response_model=TranscriptionResponse)
-async def transcribe_voice(request: TranscriptionRequest, service: object = None) -> TranscriptionResponse:
+async def transcribe_voice(
+    request: TranscriptionRequest,
+    service: TranscriptionService = Depends(lambda: globals()["get_transcription_service"]()),
+) -> TranscriptionResponse:
     """Transcribe audio bytes into text."""
     if not request.audio_bytes:
         raise ValueError("audio_bytes is required")
@@ -174,17 +214,18 @@ async def transcribe_voice(request: TranscriptionRequest, service: object = None
         payload = bytes(request.audio_bytes)
     else:
         payload = str(request.audio_bytes).encode("utf-8")
-    active_service = service if service is not None else get_transcription_service()
-    return await active_service.transcribe_audio(payload, language=request.language)
+    return await service.transcribe_audio(payload, language=request.language)
 
 
 @router.post("/voice/transcribe-file", response_model=TranscriptionResponse)
-async def transcribe_voice_file(request: TranscriptionRequest, service: object = None) -> TranscriptionResponse:
+async def transcribe_voice_file(
+    request: TranscriptionRequest,
+    service: TranscriptionService = Depends(lambda: globals()["get_transcription_service"]()),
+) -> TranscriptionResponse:
     """Transcribe an audio file into text."""
     if not request.audio_path:
         raise ValueError("audio_path is required")
-    active_service = service if service is not None else get_transcription_service()
-    return await active_service.transcribe_file(request.audio_path, language=request.language)
+    return await service.transcribe_file(request.audio_path, language=request.language)
 
 
 @router.get("/voice/models")
@@ -195,104 +236,121 @@ async def voice_models() -> dict[str, list[str]]:
 
 
 @router.post("/voice/speak", response_model=SpeechResponse)
-async def speak(request: SpeechRequest, service: object = None) -> SpeechResponse:
+async def speak(
+    request: SpeechRequest,
+    service: TextToSpeechService = Depends(lambda: globals()["get_tts_service"]()),
+) -> SpeechResponse:
     """Convert text to speech and return audio bytes."""
-    active_service = service or get_tts_service()
-    return await active_service.speak(request.text, voice=request.voice, rate=request.rate, volume=request.volume, pitch=request.pitch, file_format=request.file_format)
+    return await service.speak(request.text, voice=request.voice, rate=request.rate, volume=request.volume, pitch=request.pitch, file_format=request.file_format)
 
 
 @router.post("/voice/save", response_model=SpeechResponse)
-async def save_speech(request: SpeechRequest, service: object = None) -> SpeechResponse:
+async def save_speech(
+    request: SpeechRequest,
+    service: TextToSpeechService = Depends(lambda: globals()["get_tts_service"]()),
+) -> SpeechResponse:
     """Save synthesized speech to a file and return metadata."""
-    active_service = service or get_tts_service()
     if not request.output_path:
         raise ValueError("output_path is required")
-    return await active_service.save_to_file(request.text, request.output_path, voice=request.voice, rate=request.rate, volume=request.volume, pitch=request.pitch, file_format=request.file_format)
+    return await service.save_to_file(request.text, request.output_path, voice=request.voice, rate=request.rate, volume=request.volume, pitch=request.pitch, file_format=request.file_format)
 
 
 @router.get("/voice/voices")
-async def list_voice_options(service: object = None) -> dict[str, list[dict[str, str | None]]]:
+async def list_voice_options(
+    service: TextToSpeechService = Depends(lambda: globals()["get_tts_service"]()),
+) -> dict[str, list[dict[str, str | None]]]:
     """Return the supported TTS voices."""
-    active_service = service or get_tts_service()
-    voices = active_service.list_voices()
+    voices = service.list_voices()
     return {"voices": [voice.model_dump() for voice in voices]}
 
 
 @router.post("/voice/wake/start", response_model=WakeResponse)
-async def wake_start(request: WakeRequest, service: object = None) -> WakeResponse:
+async def wake_start(
+    request: WakeRequest,
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeResponse:
     """Start isolated wake word listening."""
-    active_service = service or get_wake_service()
-    event = await active_service.start()
-    return WakeResponse(success=event is not None, message="wake listener started", status=active_service.get_status().model_dump_json(), event=event.__dict__ if event else None)
+    event = await service.start()
+    return WakeResponse(success=event is not None, message="wake listener started", status=service.get_status().model_dump_json(), event=event.__dict__ if event else None)
 
 
 @router.post("/voice/wake/stop", response_model=WakeResponse)
-async def wake_stop(service: object = None) -> WakeResponse:
+async def wake_stop(
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeResponse:
     """Stop isolated wake word listening."""
-    active_service = service or get_wake_service()
-    await active_service.stop()
+    await service.stop()
     return WakeResponse(success=True, message="wake listener stopped", status="stopped", event=None)
 
 
 @router.post("/voice/wake/pause", response_model=WakeResponse)
-async def wake_pause(service: object = None) -> WakeResponse:
+async def wake_pause(
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeResponse:
     """Pause isolated wake word listening."""
-    active_service = service or get_wake_service()
-    await active_service.pause()
+    await service.pause()
     return WakeResponse(success=True, message="wake listener paused", status="paused", event=None)
 
 
 @router.post("/voice/wake/resume", response_model=WakeResponse)
-async def wake_resume(service: object = None) -> WakeResponse:
+async def wake_resume(
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeResponse:
     """Resume isolated wake word listening."""
-    active_service = service or get_wake_service()
-    await active_service.resume()
+    await service.resume()
     return WakeResponse(success=True, message="wake listener resumed", status="running", event=None)
 
 
 @router.get("/voice/wake/status", response_model=WakeStatus)
-async def wake_status(service: object = None) -> WakeStatus:
+async def wake_status(
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeStatus:
     """Return the current wake listener status."""
-    active_service = service or get_wake_service()
-    return active_service.get_status()
+    return service.get_status()
 
 
 @router.post("/voice/wake/test", response_model=WakeResponse)
-async def wake_test(request: WakeRequest, service: object = None) -> WakeResponse:
+async def wake_test(
+    request: WakeRequest,
+    service: WakeService = Depends(lambda: globals()["get_wake_service"]()),
+) -> WakeResponse:
     """Smoke-test the wake detector without starting speech recognition."""
-    active_service = service or get_wake_service()
-    event = await active_service.test_detection()
+    event = await service.test_detection()
     return WakeResponse(success=event is not None, message="wake test completed", status="tested", event=event.__dict__ if event else None)
 
 
 @router.post("/voice/start")
-async def voice_start(controller: object = None) -> dict[str, str]:
+async def voice_start(
+    controller: VoiceController = Depends(lambda: globals()["get_voice_controller"]()),
+) -> dict[str, str]:
     """Start the voice pipeline."""
-    active_controller = controller or get_voice_controller()
-    await active_controller.start()
+    await controller.start()
     return {"status": "running"}
 
 
 @router.post("/voice/stop")
-async def voice_stop(controller: object = None) -> dict[str, str]:
+async def voice_stop(
+    controller: VoiceController = Depends(lambda: globals()["get_voice_controller"]()),
+) -> dict[str, str]:
     """Stop the voice pipeline."""
-    active_controller = controller or get_voice_controller()
-    await active_controller.stop()
+    await controller.stop()
     return {"status": "stopped"}
 
 
 @router.post("/voice/run-once")
-async def voice_run_once(controller: object = None) -> dict[str, Any]:
+async def voice_run_once(
+    controller: VoiceController = Depends(lambda: globals()["get_voice_controller"]()),
+) -> dict[str, Any]:
     """Run a single voice interaction cycle."""
-    active_controller = controller or get_voice_controller()
-    return await active_controller.run_once()
+    return await controller.run_once()
 
 
 @router.get("/voice/status")
-async def voice_status(controller: object = None) -> dict[str, Any]:
+async def voice_status(
+    controller: VoiceController = Depends(lambda: globals()["get_voice_controller"]()),
+) -> dict[str, Any]:
     """Return the current voice pipeline status."""
-    active_controller = controller or get_voice_controller()
-    return active_controller.status()
+    return controller.status()
 
 
 __all__ = ["router"]

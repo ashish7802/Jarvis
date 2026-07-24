@@ -49,10 +49,22 @@ class WakeDetector:
             await self.initialize()
         if self._model is None:
             raise VoiceError("model was not initialized")
-        payload = np.frombuffer(audio_chunk, dtype=np.int16)
+        if np is not None and hasattr(np, "frombuffer"):
+            payload = np.frombuffer(audio_chunk, dtype=np.int16)
+        else:
+            payload = audio_chunk
         result = self._model.predict(payload)
-        score = float(result.get("score", 0.0)) if isinstance(result, dict) else 0.0
-        logger.info("wake detected", extra={"confidence": score})
+        score = 0.0
+        if isinstance(result, dict):
+            if self.model in result:
+                score = float(result[self.model])
+            elif "score" in result:
+                score = float(result["score"])
+            elif result:
+                score = float(max(result.values()))
+        elif isinstance(result, (float, int)):
+            score = float(result)
+        logger.info("wake detection score", extra={"confidence": score, "model": self.model})
         return score
 
     async def close(self) -> None:

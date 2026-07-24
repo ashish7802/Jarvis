@@ -32,19 +32,19 @@ class GroqProvider(BaseLLMProvider):
         response = await self.get_response(prompt, model=model, **kwargs)
         return response.content
 
-    def stream(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> Any:
-        if self._client is None:
-            self._client = None
-
+    def stream(self, prompt: str | list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> Any:
+        messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
         request_kwargs = {
             "model": model or self._default_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "stream": True,
             **kwargs,
         }
 
         async def _generator() -> Any:
             try:
+                if self._client is None:
+                    await self.initialize()
                 response = await self._call_with_retry(request_kwargs)
                 if hasattr(response, "__aiter__"):
                     async for chunk in response:
@@ -76,13 +76,14 @@ class GroqProvider(BaseLLMProvider):
             logger.warning("Groq provider health check failed")
             return False
 
-    async def get_response(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> ProviderResponse:
+    async def get_response(self, prompt: str | list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> ProviderResponse:
         if self._client is None:
             await self.initialize()
 
+        messages = prompt if isinstance(prompt, list) else [{"role": "user", "content": prompt}]
         request_kwargs = {
             "model": model or self._default_model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             **kwargs,
         }
         response = await self._call_with_retry(request_kwargs)

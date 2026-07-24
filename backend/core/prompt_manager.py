@@ -9,13 +9,18 @@ class PromptManager:
     def __init__(self, prompts_dir: str | Path | None = None) -> None:
         base_dir = Path(prompts_dir) if prompts_dir is not None else Path(__file__).resolve().parents[1] / "prompts"
         self.prompts_dir = base_dir
+        self._cache: dict[str, str] = {}
 
     def get_prompt(self, kind: str, **kwargs: str) -> str:
-        file_path = self._resolve_path(kind)
-        if file_path.exists():
-            template = file_path.read_text(encoding="utf-8").strip()
+        if kind in self._cache:
+            template = self._cache[kind]
         else:
-            template = self._default_prompt(kind)
+            file_path = self._resolve_path(kind)
+            if file_path.exists():
+                template = file_path.read_text(encoding="utf-8").strip()
+            else:
+                template = self._default_prompt(kind)
+            self._cache[kind] = template
 
         if not kwargs:
             return template

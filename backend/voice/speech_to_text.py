@@ -60,8 +60,16 @@ class FasterWhisperTranscriber(BaseTranscriber):
             raise TranscriptionError(str(exc)) from exc
         text = " ".join(segment.text.strip() for segment in segments if getattr(segment, "text", None))
         processing_time = round(time.perf_counter() - start, 3)
-        logger.info("Transcription completed", extra={"processing_time": processing_time, "language": info.language})
-        return TranscriptionResponse(text=text, language=info.language, confidence=float(info.confidence or 0.0), processing_time=processing_time)
+        confidence_score = float(getattr(info, "language_probability", getattr(info, "confidence", 0.0)) or 0.0)
+        lang = getattr(info, "language", None)
+        logger.info("Transcription completed", extra={"processing_time": processing_time, "language": lang})
+        return TranscriptionResponse(
+            text=text,
+            language=lang,
+            confidence=confidence_score,
+            processing_time=processing_time,
+            metadata={"language_probability": confidence_score, "duration": getattr(info, "duration", None)},
+        )
 
     async def transcribe_file(self, audio_path: str, *, language: str | None = None, **kwargs: Any) -> TranscriptionResponse:
         payload = read_audio_file(audio_path)

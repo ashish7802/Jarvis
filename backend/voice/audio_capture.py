@@ -35,11 +35,10 @@ class AudioRecorder:
         frames: list[bytes] = []
         try:
             with sounddevice.InputStream(samplerate=self.sample_rate, channels=self.channels, blocksize=self.chunk_size, device=self.device) as stream:
-                while not frames and time.perf_counter() - start < self.record_duration:
+                while time.perf_counter() - start < self.record_duration:
                     chunk, _ = await asyncio.to_thread(self._read_chunk, stream)
                     if chunk:
                         frames.append(chunk)
-                        break
                     await asyncio.sleep(0.001)
         except Exception as exc:
             logger.exception("Recording failed")
@@ -51,6 +50,10 @@ class AudioRecorder:
     def _read_chunk(self, stream: Any) -> tuple[bytes, int]:
         if stream is not None and hasattr(stream, "read"):
             payload = stream.read(self.chunk_size)
+            if isinstance(payload, tuple):
+                payload = payload[0]
+            if hasattr(payload, "tobytes"):
+                return payload.tobytes(), 1
             if isinstance(payload, (bytes, bytearray)):
                 return bytes(payload), 1
             if isinstance(payload, list):
@@ -61,4 +64,7 @@ class AudioRecorder:
         recorder = getattr(sounddevice, "rec", None)
         if recorder is None:
             return b"", 0
-        return recorder(1, samplerate=self.sample_rate, channels=self.channels, blocking=False), 1
+        res = recorder(self.chunk_size, samplerate=self.sample_rate, channels=self.channels, blocking=False)
+        if hasattr(res, "tobytes"):
+            return res.tobytes(), 1
+        return b"", 0

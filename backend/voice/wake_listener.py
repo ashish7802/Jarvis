@@ -11,13 +11,17 @@ from backend.voice.wake_detector import WakeDetector
 from backend.voice.wake_events import WakeEvent
 
 
+from backend.voice.audio_capture import AudioRecorder
+
+
 class WakeListener:
     """Asynchronous microphone listener for wake word detection."""
 
-    def __init__(self, detector: WakeDetector, *, timeout: float = 5.0, cooldown: float = 1.0) -> None:
+    def __init__(self, detector: WakeDetector, *, timeout: float = 5.0, cooldown: float = 1.0, recorder: AudioRecorder | None = None) -> None:
         self.detector = detector
         self.timeout = timeout
         self.cooldown = cooldown
+        self.recorder = recorder or AudioRecorder(chunk_size=1280)
         self._running = False
         self._paused = False
         self._last_event_at = 0.0
@@ -49,19 +53,47 @@ class WakeListener:
         if self._paused:
             return None
         start_time = time.perf_counter()
-        while not self._stop_event.is_set() and time.perf_counter() - start_time < self.timeout:
-            if self._paused:
-                return None
-            await asyncio.sleep(0.01)
-            if time.perf_counter() - self._last_event_at < self.cooldown:
-                logger.info("cooldown")
-                continue
-            score = await self.detector.predict(b"\x00\x00")
-            if score >= self.detector.threshold:
-                self._last_event_at = time.perf_counter()
-                event = WakeEvent(timestamp=self._now(), confidence=score, wake_word=self.detector.model, engine=self.detector.engine, device=self.detector.device)
-                logger.info("wake detected", extra={"confidence": score, "wake_word": event.wake_word})
-                return event
+        
+        try:
+            from backend.voice.audio_capture import sounddevice
+        except Exception:
+            sounddevice = None
+
+        if sounddevice is None:
+            # Fallback if sounddevice is absent
+            while not self._stop_event.is_set() and time.perf_counter() - start_time < self.timeout:
+                if self._paused:
+                    return None
+                await asyncio.sleep(0.1)
+                if time.perf_counter() - self._last_event_at < self.cooldown:
+                    continue
+                score = await self.detector.predict(b"\x00" * 2560)
+                if score >= self.detector.threshold:
+                    self._last_event_at = time.perf_counter()
+                    event = WakeEvent(timestamp=self._now(), confidence=score, wake_word=self.detector.model, engine=self.detector.engine, device=self.detector.device)
+                    logger.info("wake detected", extra={"confidence": score, "wake_word": event.wake_word})
+                    return event
+            return None
+
+        try:
+            with sounddevice.InputStream(samplerate=self.recorder.sample_rate, channels=self.recorder.channels, blocksize=1280, device=self.detector.device) as stream:
+                while not self._stop_event.is_set() and time.perf_counter() - start_time < self.timeout:
+                    if self._paused:
+                        return None
+                    chunk, _ = await asyncio.to_thread(self.recorder._read_chunk, stream)
+                    if not chunk:
+                        await asyncio.sleep(0.01)
+                        continue
+                    if time.perf_counter() - self._last_event_at < self.cooldown:
+                        continue
+                    score = await self.detector.predict(chunk)
+                    if score >= self.detector.threshold:
+                        self._last_event_at = time.perf_counter()
+                        event = WakeEvent(timestamp=self._now(), confidence=score, wake_word=self.detector.model, engine=self.detector.engine, device=self.detector.device)
+                        logger.info("wake detected", extra={"confidence": score, "wake_word": event.wake_word})
+                        return event
+        except Exception as exc:
+            logger.warning("Error reading microphone for wake detection: %s", exc)
         return None
 
     def is_running(self) -> bool:

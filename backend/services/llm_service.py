@@ -19,11 +19,9 @@ class LLMService:
     async def get_provider_response(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> ProviderResponse:
         return await self._provider.get_response(prompt, model=model, **kwargs)
 
-    async def stream_tokens(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> list[StreamingChunk]:
-        chunks: list[StreamingChunk] = []
+    async def stream_tokens(self, prompt: str | list[dict[str, str]], *, model: str | None = None, **kwargs: Any):
         async for chunk in self._provider.stream(prompt, model=model, **kwargs):
-            chunks.append(chunk)
-        return chunks
+            yield chunk
 
     async def health_check(self) -> bool:
         return await self._provider.health_check()

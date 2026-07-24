@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.log
+.env
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.sqlite3
+alembic/versions/*.pyc

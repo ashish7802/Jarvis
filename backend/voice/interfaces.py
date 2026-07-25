@@ -7,14 +7,16 @@ from backend.voice.schemas import TranscriptionResponse
 
 
 class BaseTranscriber(ABC):
+    """Abstract interface for speech-to-text transcribers."""
+
     @abstractmethod
     async def transcribe_audio(self, audio_bytes: bytes, *, language: str | None = None, **kwargs: Any) -> TranscriptionResponse:
-        """Transcribe raw audio bytes."""
+        pass
 
     @abstractmethod
     async def transcribe_file(self, audio_path: str, *, language: str | None = None, **kwargs: Any) -> TranscriptionResponse:
-        """Transcribe an audio file."""
+        pass
 
     @abstractmethod
     async def transcribe_stream(self, audio_stream: Any, *, language: str | None = None, **kwargs: Any) -> TranscriptionResponse:
-        """Transcribe a stream of audio data."""
+        pass

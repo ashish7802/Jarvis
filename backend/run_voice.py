@@ -8,8 +8,18 @@ from backend.voice.voice_pipeline import VoicePipeline
 
 
 async def main() -> None:
+    print("Loading configuration...")
+    print("Loading Whisper...")
+    print("Loading Groq...")
+    print("Loading Edge TTS...")
+    
     pipeline = VoicePipeline()
     controller = VoiceController(pipeline=pipeline)
+    
+    # Initialize pipeline detector and listener diagnostics
+    await pipeline._wake_service.detector.initialize()
+
+    print("Ready.")
     print("==========================================")
     print(" Altron Assistant Voice Loop Active ")
     print(" Say 'Hey Altron' to trigger wake word ")
@@ -19,7 +29,7 @@ async def main() -> None:
 
     try:
         while True:
-            print("\n[Waiting for wake word...]")
+            print("\nWaiting for wake word...")
             res = await controller.run_once()
             if res.get("wake_detected"):
                 print(f" Recognized Speech: '{res.get('recognized_text')}'")

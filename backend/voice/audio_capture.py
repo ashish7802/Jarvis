@@ -16,14 +16,14 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 class AudioRecorder:
-    """Capture microphone audio asynchronously."""
+    """Capture microphone audio asynchronously with int16 PCM format."""
 
     def __init__(self, *, sample_rate: int | None = None, channels: int | None = None, chunk_size: int | None = None, record_duration: float | None = None, device: str | None = None) -> None:
         settings = get_settings()
         self.sample_rate = sample_rate or int(getattr(settings, "audio_sample_rate", 16000))
         self.channels = channels or int(getattr(settings, "audio_channels", 1))
-        self.chunk_size = chunk_size or 1024
-        self.record_duration = record_duration or 5.0
+        self.chunk_size = chunk_size or 1280
+        self.record_duration = record_duration or 4.0
         self.device = device
 
     async def record_audio(self) -> bytes:
@@ -34,7 +34,7 @@ class AudioRecorder:
         start = time.perf_counter()
         frames: list[bytes] = []
         try:
-            with sounddevice.InputStream(samplerate=self.sample_rate, channels=self.channels, blocksize=self.chunk_size, device=self.device) as stream:
+            with sounddevice.InputStream(samplerate=self.sample_rate, channels=self.channels, blocksize=self.chunk_size, dtype="int16", device=self.device) as stream:
                 while time.perf_counter() - start < self.record_duration:
                     chunk, _ = await asyncio.to_thread(self._read_chunk, stream)
                     if chunk:
@@ -64,7 +64,7 @@ class AudioRecorder:
         recorder = getattr(sounddevice, "rec", None)
         if recorder is None:
             return b"", 0
-        res = recorder(self.chunk_size, samplerate=self.sample_rate, channels=self.channels, blocking=False)
+        res = recorder(self.chunk_size, samplerate=self.sample_rate, channels=self.channels, dtype="int16", blocking=False)
         if hasattr(res, "tobytes"):
             return res.tobytes(), 1
         return b"", 0

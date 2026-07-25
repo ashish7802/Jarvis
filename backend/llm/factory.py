@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-from backend.config.settings import get_settings
+from typing import Any
+
 from backend.interfaces.llm_provider import BaseLLMProvider
 from backend.llm.providers.groq.provider import GroqProvider
 
 
 class LLMProviderFactory:
-    """Factory for constructing providers based on configuration."""
+    """Factory for instantiating LLM providers."""
 
-    def __init__(self, provider_name: str | None = None) -> None:
-        settings = get_settings()
-        self._provider_name = provider_name or settings.llm_provider or "groq"
-
-    def create(self) -> BaseLLMProvider:
-        if self._provider_name == "groq":
-            return GroqProvider()
-        raise ValueError(f"Unsupported provider: {self._provider_name}")
-
-
-__all__ = ["LLMProviderFactory"]
+    def create(self, provider_name: str = "groq", **kwargs: Any) -> BaseLLMProvider:
+        if provider_name.lower() == "groq":
+            return GroqProvider(**kwargs)
+        raise ValueError(f"Unsupported LLM provider: {provider_name}")

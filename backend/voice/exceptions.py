@@ -1,22 +1,46 @@
+from __future__ import annotations
+
+
 class VoiceError(Exception):
-    """Base exception for voice processing errors."""
+    """Base exception for all voice module errors."""
+    pass
 
 
 class MicrophoneError(VoiceError):
-    """Raised when microphone capture is unavailable."""
+    """Raised when there is an issue capturing audio from the microphone."""
+    pass
 
 
-class AudioFormatError(VoiceError):
-    """Raised when audio data is unsupported."""
+class AudioPlaybackError(VoiceError):
+    """Raised when audio playback fails."""
+    pass
 
 
-class TranscriptionError(VoiceError):
-    """Raised when speech-to-text processing fails."""
+class WakeWordError(VoiceError):
+    """Raised when wake word detection fails or is misconfigured."""
+    pass
+
+
+class STTError(VoiceError):
+    """Raised when speech-to-text transcription fails."""
+    pass
+
+
+class TTSError(VoiceError):
+    """Raised when text-to-speech synthesis fails."""
+    pass
 
 
 class ModelLoadError(VoiceError):
-    """Raised when the Faster-Whisper model cannot be loaded."""
+    """Raised when loading a voice model fails."""
+    pass
 
 
-class SpeechError(VoiceError):
-    """Raised when text-to-speech synthesis fails."""
+class TranscriptionError(STTError):
+    """Raised when transcription fails."""
+    pass
+
+
+class SpeechError(TTSError):
+    """Raised when speech synthesis fails."""
+    pass

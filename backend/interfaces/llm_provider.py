@@ -1,35 +1,32 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, AsyncIterator
 
 from backend.schemas.chat import ProviderResponse, StreamingChunk
 
 
 class BaseLLMProvider(ABC):
-    """Contract for all LLM providers."""
+    """Abstract interface for LLM provider implementations."""
 
-    name: str = ""
-
-    @abstractmethod
-    async def initialize(self) -> None:
-        """Initialize provider-specific resources."""
+    name: str = "base"
 
     @abstractmethod
     async def complete(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> str:
-        """Generate a completion for the provided prompt."""
+        """Generate a complete text response for a given prompt."""
+        pass
 
     @abstractmethod
-    def stream(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> Any:
-        """Stream completion chunks for the provided prompt."""
+    def stream(self, prompt: str | list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> AsyncIterator[StreamingChunk]:
+        """Stream response tokens standard AsyncIterator."""
+        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
-        """Return whether the provider is healthy."""
+        """Check availability of the underlying provider API."""
+        pass
 
     @abstractmethod
-    async def get_response(self, prompt: str, *, model: str | None = None, **kwargs: Any) -> ProviderResponse:
-        """Return a structured provider response."""
-
-
-__all__ = ["BaseLLMProvider"]
+    async def get_response(self, prompt: str | list[dict[str, str]], *, model: str | None = None, **kwargs: Any) -> ProviderResponse:
+        """Fetch structured ProviderResponse containing response content and metadata."""
+        pass

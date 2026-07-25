@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class WakeEvent:
-    """Represents a wake word detection event."""
+    """Data object representing a detected wake word event."""
 
-    timestamp: datetime
-    confidence: float
-    wake_word: str
-    engine: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    confidence: float = 0.0
+    wake_word: str = "hey_jarvis"
+    engine: str = "openwakeword"
     device: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)

@@ -1,54 +1,67 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
 from typing import Any
-
 from loguru import logger
 
-from backend.config.settings import get_settings
-from backend.voice.exceptions import VoiceError
 from backend.voice.wake_detector import WakeDetector
-from backend.voice.wake_events import WakeEvent
 from backend.voice.wake_listener import WakeListener
-from backend.voice.wake_models import WakeStatus
+from backend.voice.wake_events import WakeEvent
+from backend.voice.schemas import WakeStatus
 
 
 class WakeService:
-    """Application-facing service for isolated wake word detection."""
+    """High-level service coordinating WakeDetector and WakeListener."""
 
-    def __init__(self, detector: WakeDetector | None = None, listener: WakeListener | None = None) -> None:
-        settings = get_settings()
-        self.detector = detector or WakeDetector(engine=settings.wake_engine, model=settings.wake_model, threshold=settings.wake_threshold, device=settings.mic_device)
-        self.listener = listener or WakeListener(self.detector, timeout=settings.wake_timeout, cooldown=settings.wake_cooldown)
-        self._status = {"running": False, "paused": False, "engine": self.detector.engine, "wake_word": self.detector.model, "threshold": self.detector.threshold, "timeout": self.listener.timeout, "cooldown": self.listener.cooldown, "device": self.detector.device, "last_event": None}
+    def __init__(
+        self,
+        *,
+        detector: WakeDetector | None = None,
+        listener: WakeListener | None = None,
+        engine: str = "openwakeword",
+        model: str = "hey_jarvis",
+        threshold: float = 0.5,
+    ) -> None:
+        self.detector = detector or WakeDetector(engine=engine, model=model, threshold=threshold)
+        self.listener = listener or WakeListener(detector=self.detector)
 
     async def start(self) -> WakeEvent | None:
-        await self.detector.initialize()
+        """Start listening and return the detected WakeEvent if triggered."""
         await self.listener.start()
-        self._status["running"] = True
-        self._status["paused"] = False
         return await self.listener.listen()
 
     async def stop(self) -> None:
+        """Stop wake listener."""
         await self.listener.stop()
-        self._status["running"] = False
-        self._status["paused"] = False
 
     async def pause(self) -> None:
+        """Pause wake listener."""
         await self.listener.pause()
-        self._status["paused"] = True
 
     async def resume(self) -> None:
+        """Resume wake listener."""
         await self.listener.resume()
-        self._status["paused"] = False
-
-    def is_running(self) -> bool:
-        return self.listener.is_running()
 
     def get_status(self) -> WakeStatus:
-        self._status["running"] = self.listener.is_running()
-        self._status["paused"] = self.listener.is_paused()
-        return WakeStatus(**self._status)
+        """Get current status of wake listener."""
+        state = "paused" if self.listener.is_paused() else ("running" if self.listener.is_running() else "stopped")
+        return WakeStatus(
+            state=state,
+            engine=self.detector.engine,
+            model=self.detector.model,
+            threshold=self.detector.threshold,
+        )
 
     async def test_detection(self) -> WakeEvent | None:
-        return await self.start()
+        """Smoke test wake detector with silent audio payload."""
+        try:
+            score = await self.detector.predict(b"\x00" * 2560)
+            return WakeEvent(
+                confidence=score,
+                wake_word=self.detector.model,
+                engine=self.detector.engine,
+                device=self.detector.device,
+            )
+        except Exception as exc:
+            logger.warning("Wake detection test error: %s", exc)
+            return None

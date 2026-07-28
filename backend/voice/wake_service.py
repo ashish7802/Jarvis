@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 from loguru import logger
 
+from backend.config.settings import get_settings
 from backend.voice.wake_detector import WakeDetector
 from backend.voice.wake_listener import WakeListener
 from backend.voice.wake_events import WakeEvent
@@ -22,7 +23,16 @@ class WakeService:
         model: str = "hey_jarvis",
         threshold: float = 0.5,
     ) -> None:
-        self.detector = detector or WakeDetector(engine=engine, model=model, threshold=threshold)
+        if detector is None:
+            settings = get_settings()
+            self.detector = WakeDetector(
+                engine=settings.wake_engine,
+                model=settings.wake_model,
+                threshold=settings.wake_threshold,
+                device=settings.mic_device,
+            )
+        else:
+            self.detector = detector
         self.listener = listener or WakeListener(detector=self.detector)
 
     async def start(self) -> WakeEvent | None:

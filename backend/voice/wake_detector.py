@@ -55,7 +55,68 @@ class WakeDetector:
             input_devices = [d for d in devices if d.get("max_input_channels", 0) > 0]
             if not input_devices:
                 raise MicrophoneError("No input audio devices found on system")
+
+            # Safely extract default input device index from sd.default.device
+            # sd.default.device can be: int, tuple/list (input, output), _InputOutputPair, or None
+            default_raw = sd.default.device
+            if default_raw is None:
+                raise MicrophoneError("No default input device configured on system")
+            if isinstance(default_raw, int):
+                default_input_index = default_raw
+            else:
+                # Handles tuple, list, _InputOutputPair — extract input device (first element)
+                default_input_index = int(default_raw[0])
+            default_info = sd.query_devices(default_input_index)
+            print(f"Configured microphone device: {self.device}")
+            print(f"Default system device: {default_info['name']} (index {default_info.get('index', 'N/A')})")
+            print(f"Selected input device index: {default_input_index}")
+            print(f"Sample rate: {default_info.get('default_samplerate', 'N/A')}")
+            print(f"Input channels: {default_info.get('max_input_channels', 0)}")
+
+            # Validate configured device if specified
+            if self.device is not None:
+                resolved_device = None
+                resolved_index = None
+                # Try to resolve by integer index
+                try:
+                    idx = int(self.device)
+                    if 0 <= idx < len(devices):
+                        resolved_device = devices[idx]
+                        resolved_index = idx
+                except (ValueError, TypeError):
+                    pass
+
+                # Try to resolve by name substring match
+                if resolved_device is None:
+                    for idx, d in enumerate(devices):
+                        if self.device.lower() in d.get("name", "").lower():
+                            resolved_device = d
+                            resolved_index = idx
+                            break
+
+                if resolved_device is None or resolved_device.get("max_input_channels", 0) == 0:
+                    err_lines = [f"Microphone device '{self.device}' is invalid or has no input channels."]
+                    err_lines.append("Available input devices:")
+                    for idx, d in enumerate(input_devices):
+                        err_lines.append(
+                            f"  [{idx}] {d.get('name', 'Unknown')} "
+                            f"(channels={d.get('max_input_channels', 0)}, "
+                            f"samplerate={d.get('default_samplerate', 'N/A')})"
+                        )
+                    err_msg = "\n".join(err_lines)
+                    logger.error(err_msg)
+                    print(f"[FAIL] {err_msg}")
+                    raise MicrophoneError(err_msg)
+
+                # Valid device found — print selected device info
+                print(f"Configured device index: {resolved_index}")
+                print(f"Device name: {resolved_device.get('name', 'Unknown')}")
+                print(f"Sample rate: {resolved_device.get('default_samplerate', 'N/A')}")
+                print(f"Input channels: {resolved_device.get('max_input_channels', 0)}")
+
             print("[OK] Microphone ready")
+        except MicrophoneError:
+            raise
         except Exception as exc:
             err_msg = f"Microphone error: {exc}"
             logger.error(err_msg)

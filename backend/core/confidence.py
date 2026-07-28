@@ -1,24 +1,13 @@
 from __future__ import annotations
 
+from typing import Any
 from backend.schemas.chat import ConfidenceResult, IntentResult
 
 
 class ConfidenceEngine:
-    """Assess confidence in the inferred intent and downstream response."""
+    """Evaluates response confidence scores and clarification flags."""
 
-    async def evaluate(self, message: str, intent: IntentResult) -> ConfidenceResult:
-        normalized = (message or "").strip()
-        score = intent.confidence
-        reason = intent.reason
-        uncertainty = False
-
-        if len(normalized.split()) < 3:
-            score = max(0.1, score - 0.2)
-            uncertainty = True
-            reason = "The input is too short to be confident."
-        elif intent.intent in {"command", "conversation"}:
-            score = max(0.3, score - 0.1)
-            uncertainty = True
-            reason = "The intent is broad and may need clarification."
-
-        return ConfidenceResult(score=round(score, 2), reason=reason, uncertainty=uncertainty)
+    async def evaluate(self, text: str, intent: IntentResult | None = None) -> ConfidenceResult:
+        if not text or len(text.strip()) == 0:
+            return ConfidenceResult(score=0.0, reason="Empty text input", needs_clarification=True, uncertainty=True)
+        return ConfidenceResult(score=1.0, reason="High confidence", needs_clarification=False, uncertainty=False)

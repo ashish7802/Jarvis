@@ -4,44 +4,34 @@ from typing import Any
 
 
 class ConversationManager:
-    """Manage conversation state for prompt construction and history trimming."""
+    """Manages multi-turn chat history and prompt construction."""
 
-    def __init__(self, max_history: int = 10, system_prompt: str | None = None) -> None:
+    def __init__(self, max_history: int = 10) -> None:
         self.max_history = max_history
-        self.system_prompt = system_prompt or "You are a helpful AI assistant."
+        self._system_prompt: str | None = None
         self._history: list[dict[str, str]] = []
-        self.assistant_replies: list[str] = []
-        self.user_messages: list[str] = []
-
-    def add_user_message(self, message: str) -> None:
-        self.user_messages.append(message)
-        self._history.append({"role": "user", "content": message})
-        self._trim_history()
-
-    def add_assistant_message(self, message: str) -> None:
-        self.assistant_replies.append(message)
-        self._history.append({"role": "assistant", "content": message})
-        self._trim_history()
 
     def set_system_prompt(self, prompt: str) -> None:
-        self.system_prompt = prompt
+        self._system_prompt = prompt
 
-    def get_history(self) -> list[dict[str, str]]:
-        return list(self._history[-self.max_history :])
+    def add_user_message(self, content: str) -> None:
+        self._history.append({"role": "user", "content": content})
+        self._trim_history()
+
+    def add_assistant_message(self, content: str) -> None:
+        self._history.append({"role": "assistant", "content": content})
+        self._trim_history()
 
     def build_messages(self) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": self.system_prompt}]
-        messages.extend(self.get_history())
+        messages: list[dict[str, str]] = []
+        if self._system_prompt:
+            messages.append({"role": "system", "content": self._system_prompt})
+        messages.extend(self._history)
         return messages
+
+    def clear_history(self) -> None:
+        self._history.clear()
 
     def _trim_history(self) -> None:
         if len(self._history) > self.max_history:
-            self._history = self._history[-self.max_history :]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "system_prompt": self.system_prompt,
-            "history": self.get_history(),
-            "assistant_replies": self.assistant_replies,
-            "user_messages": self.user_messages,
-        }
+            self._history = self._history[-self.max_history:]

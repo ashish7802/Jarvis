@@ -1,1 +1,0 @@
-"""Altron backend package."""

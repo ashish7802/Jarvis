@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class HealthResponse(BaseModel):
-    """Health check response schema."""
-
-    status: str = Field(default="ok")
-    app_name: str
-    environment: str
+    status: str = "healthy"
+    version: str = "1.0.0"
 
 
 class VersionResponse(BaseModel):
-    """Version response schema."""
-
-    app_name: str
-    version: str
+    name: str = "Altron Assistant"
+    version: str = "1.0.0"
+    environment: str = "production"

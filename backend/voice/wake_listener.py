@@ -9,8 +9,6 @@ from loguru import logger
 from backend.voice.exceptions import MicrophoneError, VoiceError
 from backend.voice.wake_detector import WakeDetector
 from backend.voice.wake_events import WakeEvent
-
-
 from backend.voice.audio_capture import AudioRecorder
 
 
@@ -60,7 +58,6 @@ class WakeListener:
             sounddevice = None
 
         if sounddevice is None:
-            # Fallback if sounddevice is absent
             while not self._stop_event.is_set() and time.perf_counter() - start_time < self.timeout:
                 if self._paused:
                     return None
@@ -76,7 +73,13 @@ class WakeListener:
             return None
 
         try:
-            with sounddevice.InputStream(samplerate=self.recorder.sample_rate, channels=self.recorder.channels, blocksize=1280, device=self.detector.device) as stream:
+            with sounddevice.InputStream(
+                samplerate=self.recorder.sample_rate,
+                channels=self.recorder.channels,
+                blocksize=1280,
+                dtype="int16",
+                device=self.detector.device
+            ) as stream:
                 while not self._stop_event.is_set() and time.perf_counter() - start_time < self.timeout:
                     if self._paused:
                         return None
@@ -86,6 +89,7 @@ class WakeListener:
                         continue
                     if time.perf_counter() - self._last_event_at < self.cooldown:
                         continue
+                    
                     score = await self.detector.predict(chunk)
                     if score >= self.detector.threshold:
                         self._last_event_at = time.perf_counter()

@@ -8,3 +8,22 @@ __pycache__/
 .ruff_cache/
 *.sqlite3
 alembic/versions/*.pyc
+
+# Blackbox
+.blackbox/
+
+# Temporary debug files
+TODO.md
+_device_diag.py
+_diagnostic.py
+_full_diag.py
+_mic_test.py
+_model_test.txt
+_pipeline_trace_output.txt
+_quick_test.py
+_quick_test_output.txt
+_trace_pipeline.py
+_validate_pipeline.py
+_validation_output.txt
+_validation_v2.py
+_validation_v2_output.txt

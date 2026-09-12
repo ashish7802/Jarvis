@@ -2,6 +2,86 @@
 
 A Windows-native, voice-first personal assistant.
 
+### Conversation and reliability improvements
+
+- Basic arithmetic and percentages use a bounded local calculator, rather than
+  relying on generated answers. Try **"what is 17 times 23"**, **"calculate 0.1
+  plus 0.2"**, or **"what is 12.5 percent of 240"**. Division by zero produces a
+  clear explanation; unsupported calculations go to Gemini. These answers,
+  time, and date stay in context for **"repeat that"** and follow-up questions.
+- She gives spoken feedback when no question was heard, recognition fails, or
+  the microphone cannot be accessed. The next wake request is preserved even
+  if it arrives immediately after a previous answer.
+- Speech recognition processes audio in memory, preserves the volume of both
+  float32 and float64 input, and normalizes supported PCM/sample rates. Silent
+  or invalid input is not sent to Whisper. No temporary microphone WAV is saved.
+- The acknowledgement is prepared during startup, so its first playback can
+  use the phrase cache. The launcher checks the same executable it starts.
+- Uses follow-up context and concise spoken answers, and acknowledges when
+  current information cannot be verified. Conversation memory keeps complete
+  exchanges (up to 31 messages by default) and excludes failed Gemini requests.
+- Say **"repeat that"**, **"clear conversation"**, **"what time is it"**, or
+  **"what's today's date"** after the wake-word acknowledgement. Time and date
+  come from the PC's clock. Memory lasts for this running session only.
+- Speech recognition detects the spoken language automatically. English and
+  Hindi use the local multilingual Whisper model; Devanagari replies use a
+  Hindi voice. Set `STT_LANGUAGE=en` or `hi` if automatic detection is unreliable
+  for your voice. Hinglish accuracy depends on the model and recording quality.
+- The microphone thread no longer blocks on conversation processing. Detection
+  resets after playback and reconnects after microphone interruptions.
+- Temporary Gemini connection/server errors retry once, with a 15-second
+  timeout per attempt. Authentication/model/quota errors give specific spoken
+  guidance, and cancelled requests cannot produce a late spoken reply.
+- TTS retries synthesis once, cancels outstanding work on shutdown, removes
+  incomplete audio files, and caches a small number of short phrases in memory.
+- A Windows session mutex prevents multiple copies of the updated app from
+  listening simultaneously. Close older JARVIS builds before using this one;
+  old versions do not implement that guard. Ctrl+Shift+J remains the exit hotkey.
+
+These changes reduce known failure modes; recognition and cloud services can
+still fail. Run `python -m pytest -q` and `python smoke_pipeline.py` to check
+the implementation and the real audio/AI pipeline respectively.
+
+### Quick start on this computer
+
+The local virtual environment, speech models, and app-local C++ runtime are
+configured. Gemini uses the `google-genai` SDK and `gemini-3.6-flash`.
+
+1. Keep your Gemini API key in `.env` as `GEMINI_API_KEY=...`, with
+   `AI_PROVIDER=gemini` and `AI_MODEL=gemini-3.6-flash`.
+2. Double-click `start_jarvis.bat`. It checks initialization, then starts
+   JARVIS in the background.
+3. After the greeting, say **"hey Jarvis"**, wait for **"Yes, Sir?"**, then
+   speak your question. Press **Ctrl + Shift + J** to stop.
+
+Useful checks from the project folder:
+
+```bat
+.venv\Scripts\python.exe -m app.check_gemini
+.venv\Scripts\python.exe -m app.main --check
+.venv\Scripts\python.exe smoke_pipeline.py
+.venv\Scripts\python.exe smoke_conversation.py
+```
+
+`smoke_pipeline.py` briefly checks microphone access, then uses synthesized
+test speech to verify wake detection and Whisper before requesting and
+playing an AI reply. It does not verify recognition of your particular voice.
+`smoke_conversation.py` verifies that the real Gemini provider remembers a
+synthetic project codename from a previous turn, without using personal data.
+
+For a fresh clone, install the dependencies and run `python -m app.setup_models`
+once with internet access. Windows also needs the
+[Microsoft Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+This computer uses an existing runtime copied into the ignored `.cache/runtime`
+folder. Downloads are required for initial model setup; cached wake detection
+and STT run locally afterwards. `build.bat` includes these models and any local
+runtime in `dist/JARVIS/`. The editable `.env` remains next to `JARVIS.exe`.
+Rebuilds assemble a fresh package before moving it into place and keep the old
+folder under `.cache/previous-build-*`. This avoids OneDrive cleanup failures
+damaging an existing installation. Existing packaged configuration is preserved.
+Use `pip install -r requirements-lock.txt` to reproduce the versions verified
+on this Windows/Python 3.12 installation, including pytest and PyInstaller.
+
 - Starts on Windows login, runs silently in the background (no window).
 - Waits for the wake word **"Jarvis"**, then listens, thinks, speaks.
 - No browser, no console window, no visible UI in production.
@@ -73,7 +153,7 @@ Key values:
 | Variable | Default | Purpose |
 |---|---|---|
 | `AI_PROVIDER` | `mock` | `openai`, `gemini`, or `mock` |
-| `AI_MODEL` | (provider default) | e.g. `gpt-4o-mini`, `gemini-1.5-flash` |
+| `AI_MODEL` | (provider default) | e.g. `gpt-4o-mini`, `gemini-3.6-flash` |
 | `OPENAI_API_KEY` | _empty_ | Required when `AI_PROVIDER=openai` |
 | `GEMINI_API_KEY` | _empty_ | Required when `AI_PROVIDER=gemini` |
 | `TTS_PROVIDER` | `edge` | `edge` or `mock` |
@@ -101,7 +181,7 @@ JARVIS supports three providers:
   without an API key.
 - **`openai`** — requires `OPENAI_API_KEY`. Uses the OpenAI Chat
   Completions API.
-- **`gemini`** — requires `GEMINI_API_KEY`. Uses the Google Generative
+- **`gemini`** — requires `GEMINI_API_KEY`. Uses the Google Gen
   AI SDK.
 
 Set `AI_PROVIDER` to the one you want. JARVIS does **not** silently
@@ -114,17 +194,17 @@ fix configuration.
 
 The default backend is **openWakeWord** — fully local, no API key,
 no signup. JARVIS listens for **"hey jarvis"** by default using a
-pretrained model that ships with the `openwakeword` package.
+pretrained model downloaded by `python -m app.setup_models`.
 
 Two backends are available; pick one via `WAKEWORD_BACKEND`:
 
 1. **`openwakeword`** (default) — fully local. Uses
    [`openwakeword`](https://github.com/dscripka/openWakeWord) with
    `onnxruntime` as the inference backend. The package ships several
-   pretrained models — `hey_jarvis`, `alexa`, `hey_mycroft`,
+   pretrained model definitions — `hey_jarvis`, `alexa`, `hey_mycroft`,
    `hey_rhasspy`, `timer`, `weather` — set `OPENWAKEWORD_MODEL` to
    any of them, or to a path to a custom `.tflite`/`.onnx` model.
-   No internet, no API key, no account required.
+   After the initial model download, no internet, API key, or account is required.
 2. **`energy`** — simple energy-gate fallback. Detects a short burst
    of loud audio as a proxy for the wake word. Fully local, no
    dependencies beyond NumPy and sounddevice. Used automatically if
@@ -147,7 +227,7 @@ Two backends are available; pick one via `WAKEWORD_BACKEND`:
 
 ### Training a custom "hey jarvis" model
 
-openWakeWord already ships a pretrained `hey_jarvis` model, so
+openWakeWord provides a pretrained `hey_jarvis` model, so
 **no training is required** out of the box. If you find its accuracy
 unsatisfactory on your voice/mic, you can train a custom model by
 following the [openWakeWord training notebook](https://github.com/dscripka/openWakeWord/blob/main/notebooks/train_custom_model.ipynb),
@@ -160,7 +240,7 @@ export the resulting `.tflite` (or `.onnx`), and set
 
 Uses **faster-whisper** locally.
 
-- Model: `base` (int8, CPU). Loaded once on first use and held in
+- Model: `base` (int8, CPU). Loaded once on startup and held in
   memory; not reloaded per command.
 - Audio format: 16 kHz, mono, int16.
 - No raw microphone recordings are stored on disk.
@@ -218,9 +298,10 @@ Run from source:
 ```bat
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt pytest pyinstaller
 copy .env.example .env
 :: edit .env
+python -m app.setup_models    :: download local models once (internet required)
 python -m app.main            :: dev mode, console visible
 python -m app.main --check    :: initialise everything then exit
 python -m app.main --dev      :: explicit dev mode

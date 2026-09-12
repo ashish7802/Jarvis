@@ -38,7 +38,7 @@ class FakeAI(AIProvider):
 
 
 class FakeSTT(STTService):
-    def __init__(self, transcript: str = "what time is it") -> None:
+    def __init__(self, transcript: str = "what is Python") -> None:
         # Skip super().__init__ — we override transcribe.
         self._transcript = transcript
         self.calls = 0
@@ -70,6 +70,12 @@ class FakeTTS(TTSService):
         return True
 
     def stop(self) -> None:  # type: ignore[override]
+        pass
+
+    def cancel(self):
+        pass
+
+    def shutdown(self):
         pass
 
 
@@ -144,26 +150,30 @@ def test_engine_happy_path():
     eng.startup()
     assert eng.state == State.STANDBY
     eng._on_wake()
+    eng.process_pending_wake()
     assert eng.state == State.STANDBY
     assert eng.ai.calls, "AI was not called"
     assert eng.stt.calls == 1
     assert "I am here" in eng.tts.spoken[-1]
-    assert "what time" in eng.context.messages()[-2].content
+    assert "what is Python" in eng.context.messages()[-2].content
 
 
 def test_engine_no_speech_returns_to_standby():
     eng = _make_engine(recorder=FakeRecorder(audio=None))
     eng.startup()
     eng._on_wake()
+    eng.process_pending_wake()
     assert eng.state == State.STANDBY
     assert eng.ai.calls == []
-    assert eng.tts.spoken == ["Yes, Sir?"]
+    assert eng.tts.spoken[0] == "Yes, Sir?"
+    assert "didn't hear" in eng.tts.spoken[-1]
 
 
 def test_engine_empty_stt_returns_to_standby():
     eng = _make_engine(stt=FakeSTT(transcript=""))
     eng.startup()
     eng._on_wake()
+    eng.process_pending_wake()
     assert eng.state == State.STANDBY
     assert eng.ai.calls == []
 
@@ -174,6 +184,7 @@ def test_engine_ai_failure_does_not_crash():
     eng = _make_engine(ai=ai)
     eng.startup()
     eng._on_wake()
+    eng.process_pending_wake()
     assert eng.state == State.STANDBY
     # TTS should still have been called with the fallback reply.
     assert any("went wrong" in s or "didn't catch" in s for s in eng.tts.spoken)
@@ -185,6 +196,7 @@ def test_engine_tts_failure_does_not_crash():
     eng = _make_engine(tts=tts)
     eng.startup()
     eng._on_wake()
+    eng.process_pending_wake()
     assert eng.state == State.STANDBY
 
 
@@ -193,6 +205,7 @@ def test_wake_disabled_during_speaking():
     eng.startup()
     wake = eng.wake
     eng._on_wake()
+    eng.process_pending_wake()
     # After the cycle, wake must be re-enabled.
     assert wake.enabled is True
     # During the cycle, set_enabled(False) must have been called at
@@ -210,6 +223,7 @@ def test_wake_disabled_during_speaking():
 
     wake.set_enabled = spy  # type: ignore[assignment]
     eng._on_wake()
+    eng.process_pending_wake()
     assert counters["disable"] >= 1
     assert counters["enable"] >= 1
 
@@ -219,6 +233,7 @@ def test_wake_callback_ignored_in_non_standby_state():
     eng.startup()
     eng.set_state(State.LISTENING)  # simulate a stale state
     eng._on_wake()
+    eng.process_pending_wake()
     # Nothing should happen; AI not called.
     assert eng.ai.calls == []
 
@@ -240,9 +255,10 @@ def test_context_preserved_across_turns():
     eng.context.add_user("Write a short email to John.")
     eng.context.add_assistant("Sure, what should it say?")
     eng._on_wake()
+    eng.process_pending_wake()
     msgs = eng.context.messages()
     # Initial system + the 2 preloaded + new user + assistant
     assert msgs[0].role == "system"
     assert any(m.content == "Write a short email to John." for m in msgs)
     assert any(m.content == "Sure, what should it say?" for m in msgs)
-    assert any(m.content == "what time is it" for m in msgs)
+    assert any(m.content == "what is Python" for m in msgs)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import tempfile
+import math
 import threading
 from pathlib import Path
 from typing import Optional
@@ -20,10 +20,12 @@ class STTService:
     the same instance across many requests is the whole point.
     """
 
-    def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8") -> None:
+    def __init__(self, model_size: str = "base", device: str = "cpu", compute_type: str = "int8", language: str = "auto", beam_size: int = 3) -> None:
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.language = None if language in ("auto", "") else language
+        self.beam_size = beam_size
         self._model = None
         self._lock = threading.Lock()
 
@@ -34,6 +36,18 @@ class STTService:
             if self._model is not None:
                 return
             from faster_whisper import WhisperModel  # type: ignore
+            from faster_whisper.utils import download_model
+            from huggingface_hub.errors import LocalEntryNotFoundError
+
+            cache_dir = str(Path(__file__).resolve().parents[2] / ".cache" / "whisper")
+            model_source = self.model_size
+            if not Path(model_source).is_dir():
+                try:
+                    model_source = download_model(
+                        self.model_size, cache_dir=cache_dir, local_files_only=True
+                    )
+                except LocalEntryNotFoundError:
+                    pass  # First run downloads the model below.
 
             log.info(
                 "Loading Whisper model size=%s device=%s compute=%s",
@@ -42,10 +56,14 @@ class STTService:
                 self.compute_type,
             )
             self._model = WhisperModel(
-                self.model_size,
+                model_source,
                 device=self.device,
                 compute_type=self.compute_type,
+                download_root=cache_dir,
             )
+            if self.language and self.language not in self._model.supported_languages:
+                self._model = None
+                raise ValueError(f"Unsupported STT_LANGUAGE: {self.language}")
             log.info("Whisper model loaded")
 
     def transcribe(self, audio: np.ndarray, sample_rate: int = 16_000) -> str:
@@ -60,40 +78,33 @@ class STTService:
             self._ensure_model()
             assert self._model is not None
 
-            # Write to a temp WAV so Whisper can read it with its native
-            # audio loader. (WhisperModel.transcribe also accepts numpy
-            # arrays, but a file path keeps us compatible with the
-            # broadest range of faster-whisper versions.)
-            with tempfile.NamedTemporaryFile(
-                suffix=".wav", delete=False
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-            try:
-                import soundfile as sf
-
-                # Ensure float32 contiguous for soundfile.
-                if audio.dtype != np.float32:
-                    audio_f = audio.astype(np.float32) / 32768.0
-                else:
-                    audio_f = audio
-                sf.write(str(tmp_path), audio_f, sample_rate, subtype="FLOAT")
-
-                log.debug("STT transcribing %d samples", audio.shape[0])
-                segments, _info = self._model.transcribe(
-                    str(tmp_path),
-                    beam_size=1,
-                    vad_filter=True,
-                    language="en",
-                )
-                texts = [seg.text.strip() for seg in segments]
-                text = " ".join(t for t in texts if t).strip()
-                log.info("STT -> %r", text)
-                return text
-            finally:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
+            if not isinstance(sample_rate, int) or sample_rate <= 0:
+                raise ValueError("sample_rate must be a positive integer")
+            audio_f = audio.astype(np.float32)
+            if np.issubdtype(audio.dtype, np.signedinteger):
+                audio_f /= float(-np.iinfo(audio.dtype).min)
+            elif not np.issubdtype(audio.dtype, np.floating):
+                raise ValueError("Audio must contain signed PCM or normalized floats")
+            if audio_f.ndim == 2:
+                audio_f = audio_f.mean(axis=1)
+            if audio_f.ndim != 1 or not np.isfinite(audio_f).all():
+                raise ValueError("Invalid audio shape or sample values")
+            if not np.any(audio_f):
+                return ""
+            if sample_rate != 16000:
+                from scipy.signal import resample_poly
+                divisor = math.gcd(sample_rate, 16000)
+                audio_f = resample_poly(audio_f, 16000 // divisor, sample_rate // divisor)
+            audio_f = np.ascontiguousarray(np.clip(audio_f, -1, 1), dtype=np.float32)
+            # faster-whisper accepts 16 kHz floats directly; no microphone WAV
+            # is written to disk, and float64 input keeps its original volume.
+            segments, _info = self._model.transcribe(
+                audio_f, beam_size=self.beam_size, vad_filter=True,
+                language=self.language, condition_on_previous_text=False,
+            )
+            text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+            log.debug("STT -> %r", text)
+            return text
         except Exception as exc:
             log.exception("STT failed: %s", exc)
             return ""

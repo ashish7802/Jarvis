@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.logging_config import get_logger, setup_logging
 from app.stt.service import STTService
 from app.system.hotkey import EmergencyHotkey
+from app.system.instance import SingleInstance
 from app.tts.service import TTSService
 from app.wakeword.detector import build_wake_word
 
@@ -52,15 +53,19 @@ def _build_ai(settings) -> AIProvider:
         openai_key=settings.openai_api_key,
         gemini_key=settings.gemini_api_key,
         model=settings.ai_model,
+        request_timeout=settings.ai_request_timeout,
+        max_attempts=settings.ai_max_attempts,
     )
 
 
 def _build_stt(settings) -> STTService:
-    return STTService(model_size="base", device="cpu", compute_type="int8")
+    return STTService(model_size=settings.stt_model, device="cpu", compute_type="int8",
+                      language=settings.stt_language, beam_size=settings.stt_beam_size)
 
 
 def _build_tts(settings) -> TTSService:
-    tts = TTSService(voice=settings.tts_voice, cache_dir=settings.tts_cache_dir)
+    tts = TTSService(voice=settings.tts_voice, cache_dir=settings.tts_cache_dir,
+                     hindi_voice=settings.tts_hindi_voice, provider=settings.tts_provider)
     return tts
 
 
@@ -81,6 +86,20 @@ def _build_wake(settings):
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if "--check" in args:
+        return _run(args)
+    instance = SingleInstance()
+    if not instance.acquire():
+        # Do not open the shared log or microphone in a duplicate process.
+        return 0
+    try:
+        return _run(args)
+    finally:
+        instance.release()
+
+
+def _run(argv=None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
     check_only = "--check" in args
 
     try:
@@ -94,18 +113,19 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Construct all services. Catch *initialization* errors here so we
     # don't loop a broken assistant.
+    services = []
     try:
         ai = _build_ai(settings)
+        services.append(ai)
         log.info("ai ready: %s", ai.name)
         stt = _build_stt(settings)
+        services.append(stt)
         # Touch STT to load the model once now, not in the middle of
         # the first user command.
-        try:
-            stt._ensure_model()  # noqa: SLF001
-            log.info("stt ready")
-        except Exception as exc:
-            log.exception("STT warmup failed: %s", exc)
+        stt._ensure_model()  # noqa: SLF001
+        log.info("stt ready")
         tts = _build_tts(settings)
+        services.append(tts)
         recorder = Recorder(
             max_seconds=settings.listen_timeout,
             silence_timeout=settings.silence_timeout,
@@ -116,10 +136,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         log.info("wake ready: %s", wake.name if wake else "disabled")
     except Exception as exc:
         log.exception("FATAL: initialization failed: %s", exc)
+        for service in reversed(services):
+            try:
+                getattr(service, "shutdown", lambda: None)()
+            except Exception:
+                log.exception("Initialization cleanup failed")
         return 3
 
     if check_only:
         log.info("--check: all services initialised. exiting.")
+        for service in (ai, stt, tts):
+            getattr(service, "shutdown", lambda: None)()
         return 0
 
     engine = AssistantEngine(
@@ -132,11 +159,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled else None,
         startup_greeting_delay=settings.startup_greeting_delay,
         acknowledgement="Yes, Sir?",
+        user_name=settings.user_name,
+        context_messages=settings.context_messages,
     )
 
     hotkey = EmergencyHotkey(settings.hotkey_exit)
     hotkey.set_callback(engine.request_shutdown)
-    hotkey.start()
+    if not hotkey.start():
+        log.error("Cannot start without the emergency-stop hotkey")
+        engine.request_shutdown()
+        engine._shutdown_sequence()
+        return 4
 
     # Install a SIGINT/SIGTERM handler for graceful shutdown in dev
     # mode (PyInstaller-built GUI app won't receive these on Windows).
@@ -154,6 +187,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         pass
 
     try:
+        tts.prewarm([engine.acknowledgement])
         engine.run()
     except KeyboardInterrupt:
         engine.request_shutdown()
@@ -161,6 +195,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         log.exception("engine crashed: %s", exc)
         return 1
     finally:
+        engine.request_shutdown()
+        engine._shutdown_sequence()
         hotkey.stop()
         log.info("== JARVIS exited cleanly ==")
     return 0

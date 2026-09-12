@@ -30,22 +30,25 @@ class EmergencyHotkey:
     def set_callback(self, cb: Callable[[], None]) -> None:
         self._callback = cb
 
-    def start(self) -> None:
+    def start(self) -> bool:
         if self._handle is not None:
-            return
+            return True
         try:
             import keyboard  # type: ignore
         except ImportError as e:
             log.error("`keyboard` package not installed: %s", e)
-            return
+            return False
         try:
+            self._fired.clear()
             self._handle = keyboard.add_hotkey(
                 self.hotkey, self._on_press, suppress=False
             )
             log.info("Emergency hotkey registered: %s", self.hotkey)
+            return True
         except Exception as exc:
             log.exception("Failed to register hotkey %s: %s", self.hotkey, exc)
             self._handle = None
+            return False
 
     def stop(self) -> None:
         if self._handle is not None:

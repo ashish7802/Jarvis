@@ -47,6 +47,9 @@ def test_build_defaults_to_openwakeword(monkeypatch):
     class FakeOww:
         name = "openwakeword"
 
+        def _load_model(self):
+            pass
+
         def __init__(self, *a, **kw):
             self.started = False
 

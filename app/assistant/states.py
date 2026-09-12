@@ -26,7 +26,7 @@ _ALLOWED: dict[State, set[State]] = {
     },
     State.WAKE_DETECTED: {State.ACKNOWLEDGING, State.ERROR, State.STANDBY, State.SHUTTING_DOWN},
     State.ACKNOWLEDGING: {State.SPEAKING, State.LISTENING, State.ERROR, State.STANDBY, State.SHUTTING_DOWN},
-    State.LISTENING: {State.THINKING, State.STANDBY, State.ERROR, State.SHUTTING_DOWN},
+    State.LISTENING: {State.THINKING, State.SPEAKING, State.STANDBY, State.ERROR, State.SHUTTING_DOWN},
     State.THINKING: {State.SPEAKING, State.STANDBY, State.ERROR, State.SHUTTING_DOWN},
     State.SPEAKING: {State.STANDBY, State.LISTENING, State.ERROR, State.SHUTTING_DOWN},
     State.ERROR: {State.STANDBY, State.SHUTTING_DOWN},

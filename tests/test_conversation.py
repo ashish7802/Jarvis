@@ -26,7 +26,8 @@ def test_rolling_window_drops_oldest_user_keeps_system():
         ctx.add_assistant(f"a{i}")
     msgs = ctx.messages()
     assert msgs[0].role == "system"
-    assert len(msgs) == 4
+    assert len(msgs) <= 4
+    assert msgs[1].role == "user"
 
 
 def test_clear_resets_with_system_prompt():

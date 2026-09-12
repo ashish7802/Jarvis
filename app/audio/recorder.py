@@ -61,6 +61,7 @@ class Recorder:
         self.silence_timeout = silence_timeout
         self.silence_threshold_rms = silence_threshold_rms
         self._stop = threading.Event()
+        self.last_error = False
 
     def stop(self) -> None:
         self._stop.set()
@@ -68,12 +69,15 @@ class Recorder:
     def record(self) -> Optional[np.ndarray]:
         """Record one utterance. Returns int16 mono numpy array, or None on
         silence-only / error / interruption."""
-        self._stop.clear()
+        if self._stop.is_set():
+            return None
+        self.last_error = False
         block_size = max(1, int(self.sample_rate * BLOCK_MS / 1000))
         frames: list[np.ndarray] = []
         started_at: float | None = None
         last_sound_at = time.monotonic()
         total_samples = 0
+        deadline = time.monotonic() + self.max_seconds
 
         log.debug(
             "recorder.start sr=%d bs=%d max=%.1fs sil=%.1fs thr=%.0f",
@@ -92,6 +96,8 @@ class Recorder:
                 blocksize=block_size,
             ) as stream:
                 while not self._stop.is_set():
+                    if time.monotonic() >= deadline:
+                        break
                     block, _overflowed = stream.read(block_size)
                     if block.size == 0:
                         continue
@@ -111,6 +117,7 @@ class Recorder:
                         log.debug("recorder.max_timeout")
                         break
         except Exception as exc:
+            self.last_error = True
             log.exception("recorder error: %s", exc)
             return None
 

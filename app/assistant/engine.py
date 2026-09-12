@@ -1,103 +1,66 @@
-"""The core JARVIS engine: state machine + pipeline glue.
-
-State flow (per spec):
-    STARTING -> STANDBY -> WAKE_DETECTED -> ACKNOWLEDGING ->
-    LISTENING -> THINKING -> SPEAKING -> STANDBY
-
-Every recoverable error returns to STANDBY. Only initialization
-errors fail loudly.
-"""
-
-from __future__ import annotations
-
+"""Voice assistant engine. Wake callbacks enqueue; the main thread runs commands."""
+from datetime import datetime
 import logging
 import threading
-import time
-from typing import Callable, Optional
 
-from app.ai.base import AIProvider
+from app.ai.base import AIProviderError, ChatMessage
+from app.assistant.commands import local_reply, is_history_control
 from app.assistant.conversation import ConversationContext
-from app.assistant.states import (
-    IllegalTransition,
-    State,
-    assert_transition,
-    is_quiet_state,
-    is_self_trigger_risky,
-)
-from app.audio.recorder import Player, Recorder
-from app.stt.service import STTService
-from app.tts.service import TTSService
-from app.wakeword.detector import WakeWordDetector
+from app.assistant.states import IllegalTransition, State, assert_transition
 
 log = logging.getLogger("jarvis.engine")
-
 SYSTEM_PROMPT = (
-    "You are JARVIS, a personal AI voice assistant. "
-    "You are calm, intelligent, concise, helpful, and natural. "
-    "You are speaking directly with your user. "
-    'Use "Sir" naturally when appropriate, but do not overuse it. '
-    "Answer clearly and conversationally. "
-    "Do not claim to have performed actions you cannot actually perform. "
-    "You currently specialize in conversation, information, reasoning, and text generation."
+    "You are JARVIS, a thoughtful personal voice assistant. "
+    "Give a direct, useful answer, normally in one to three spoken sentences; expand when asked. "
+    "Use the conversation to resolve follow-up questions and pronouns. "
+    "Reason carefully, check calculations, and distinguish facts from guesses. "
+    "Ask one focused clarification when a misheard word or missing detail changes the answer. "
+    "Reply in the user's language, including English, Hindi, or Hinglish. "
+    "Use natural speech, without Markdown tables, decorative formatting, or long URLs. "
+    "Be warm and respectful without repeatedly saying Sir. "
+    "You can converse, explain, draft text, tell local time/date, repeat the last answer, "
+    "calculate basic arithmetic and percentages locally, and clear this session's conversation. "
+    "Use the actual local calculation results in the conversation for follow-up questions. "
+    "If a question has a false premise, gently correct it instead of agreeing. "
+    "For multi-step requests, cover each requested part and check that your conclusion follows. "
+    "You cannot control apps, send messages, "
+    "browse live information, or remember across restarts. Never claim you did those things. "
+    "If an answer needs current information you cannot verify, say so."
 )
 
 
 class AssistantEngine:
-    """Owns the state machine and runs the assistant's main loop.
-
-    The engine is intentionally synchronous in its `run` method — the
-    wake-word detector runs in a background thread and calls back into
-    `on_wake`. The state variable is protected by a lock so the wake
-    callback and the main loop stay in sync.
-    """
-
-    def __init__(
-        self,
-        *,
-        ai: AIProvider,
-        stt: STTService,
-        tts: TTSService,
-        wake: Optional[WakeWordDetector],
-        recorder: Recorder,
-        player: Player,
-        startup_greeting: Optional[str] = None,
-        startup_greeting_delay: float = 0.0,
-        acknowledgement: str = "Yes, Sir?",
-        on_state_change: Optional[Callable[[State], None]] = None,
-    ) -> None:
-        self.ai = ai
-        self.stt = stt
-        self.tts = tts
-        self.wake = wake
-        self.recorder = recorder
-        self.player = player
+    def __init__(self, *, ai, stt, tts, wake, recorder, player,
+                 startup_greeting=None, startup_greeting_delay=0.0,
+                 acknowledgement="Yes, Sir?", on_state_change=None,
+                 user_name="", context_messages=21, cooldown_seconds=0.4):
+        self.ai, self.stt, self.tts = ai, stt, tts
+        self.wake, self.recorder, self.player = wake, recorder, player
         self.startup_greeting = startup_greeting
         self.startup_greeting_delay = startup_greeting_delay
         self.acknowledgement = acknowledgement
         self.on_state_change = on_state_change
-
-        self.context = ConversationContext(system_prompt=SYSTEM_PROMPT)
-        self._state: State = State.STARTING
-        self._lock = threading.Lock()
+        self.cooldown_seconds = cooldown_seconds
+        prompt = SYSTEM_PROMPT + (f" The user's preferred name is {user_name}." if user_name else "")
+        self.context = ConversationContext(prompt, max_messages=context_messages)
+        self._state = State.STARTING
+        self._lock = threading.RLock()
         self._wake_event = threading.Event()
         self._shutdown = threading.Event()
-        self._greeted = False
-
-        # Wire up callbacks.
+        self._cleaned = False
         if self.wake is not None:
             self.wake.set_callback(self._on_wake)
 
-    # ------------------------------------------------------------------
-    # State management
-    # ------------------------------------------------------------------
     @property
-    def state(self) -> State:
+    def state(self):
         with self._lock:
             return self._state
 
-    def set_state(self, new: State) -> None:
+    def set_state(self, new):
         with self._lock:
             old = self._state
+            if new == old:
+                return
             try:
                 assert_transition(old, new)
             except IllegalTransition:
@@ -109,170 +72,159 @@ class AssistantEngine:
             try:
                 self.on_state_change(new)
             except Exception:
-                log.exception("on_state_change handler failed")
+                log.exception("on_state_change failed")
 
-    def _set_wake_enabled(self, enabled: bool) -> None:
+    def _set_wake_enabled(self, enabled):
         if self.wake is not None:
             self.wake.set_enabled(enabled)
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-    def startup(self) -> None:
-        """Initialize all services and play the startup greeting."""
-        log.info("engine.startup")
-        self.set_state(State.STARTING)
-        # Wake detector stays disabled until after the greeting.
-        self._set_wake_enabled(False)
+    def _speak(self, text):
+        if self._shutdown.is_set():
+            return False
+        try:
+            ok = self.tts.speak(text)
+            if not ok:
+                log.warning("Speech playback did not complete")
+            return ok
+        except Exception:
+            log.exception("Speech playback failed")
+            return False
 
+    def startup(self):
+        log.info("engine.startup")
+        self._set_wake_enabled(False)
         if self.wake is not None:
             self.wake.start()
-
         if self.startup_greeting:
-            if self.startup_greeting_delay > 0:
-                log.info(
-                    "Waiting %.1fs before startup greeting", self.startup_greeting_delay
-                )
-                if self._shutdown.wait(self.startup_greeting_delay):
-                    return
+            if self._shutdown.wait(self.startup_greeting_delay):
+                return
             self.set_state(State.SPEAKING)
-            try:
-                self.tts.speak(self.startup_greeting)
-            except Exception:
-                log.exception("startup greeting failed")
-            self._greeted = True
-            # Cooldown before wake resumes — avoids self-trigger.
-            time.sleep(0.4)
-        else:
-            self._greeted = True
-
-        self.set_state(State.STANDBY)
-        self._set_wake_enabled(True)
+            self._speak(self.startup_greeting)
+            self._shutdown.wait(self.cooldown_seconds)
+        self._back_to_standby()
         log.info("engine.standby (wake=%s)", self.wake is not None)
 
-    def run(self) -> None:
-        """Main blocking loop. Returns when shutdown is requested."""
+    def run(self):
         try:
             self.startup()
-        except Exception as exc:
-            log.exception("startup failed: %s", exc)
+            while not self._shutdown.is_set():
+                if self.wake is None:
+                    self._on_wake()
+                if self._wake_event.wait(0.5):
+                    self.process_pending_wake()
+        except Exception:
             self.set_state(State.ERROR)
-            return
-        # Main loop is event-driven by the wake-word callback. The
-        # loop body just waits for shutdown — most work happens in
-        # `_on_wake` (on the wake thread) and the inline calls there
-        # dispatch back to `handle_command` synchronously.
-        while not self._shutdown.is_set():
-            self._shutdown.wait(timeout=0.5)
-        self._shutdown_sequence()
+            raise
+        finally:
+            self.request_shutdown()
+            self._shutdown_sequence()
 
-    def request_shutdown(self) -> None:
-        log.warning("engine.shutdown_requested")
+    def request_shutdown(self):
         self._shutdown.set()
         self._wake_event.set()
-        try:
-            self.recorder.stop()
-        except Exception:
-            pass
-        try:
-            self.tts.stop()
-        except Exception:
-            pass
-        try:
-            self.player.stop()
-        except Exception:
-            pass
+        for service, method in ((self.recorder, "stop"), (self.tts, "cancel"),
+                                (self.player, "stop"), (self.ai, "cancel")):
+            try:
+                getattr(service, method, lambda: None)()
+            except Exception:
+                log.exception("%s during shutdown failed", method)
 
-    def _shutdown_sequence(self) -> None:
-        log.info("engine.shutdown_sequence")
+    def _shutdown_sequence(self):
+        if self._cleaned:
+            return
+        self._cleaned = True
         self.set_state(State.SHUTTING_DOWN)
         self._set_wake_enabled(False)
-        try:
-            if self.wake is not None:
-                self.wake.stop()
-        except Exception:
-            log.exception("wake stop failed")
-        try:
-            self.stt.shutdown()
-        except Exception:
-            pass
+        for service, method in ((self.wake, "stop"), (self.stt, "shutdown"),
+                                (self.tts, "shutdown"), (self.ai, "shutdown")):
+            try:
+                getattr(service, method, lambda: None)()
+            except Exception:
+                log.exception("Service cleanup failed")
 
-    # ------------------------------------------------------------------
-    # Wake handling
-    # ------------------------------------------------------------------
-    def _on_wake(self) -> None:
-        """Callback from the wake-word detector thread."""
-        if self._shutdown.is_set():
-            return
+    def _on_wake(self):
+        # Never record, call the AI, or play audio on the microphone thread.
         with self._lock:
-            if self._state != State.STANDBY:
-                # Self-trigger guard or stale callback.
+            if self._shutdown.is_set() or self._state != State.STANDBY:
                 return
-        # Immediately mark WAKE_DETECTED so the wake detector won't
-        # re-fire from the upcoming "Yes, Sir?" audio.
-        self.set_state(State.WAKE_DETECTED)
-        self._set_wake_enabled(False)
-        # Acknowledge on a fresh state to consume legal transitions.
-        self.set_state(State.ACKNOWLEDGING)
-        self.set_state(State.SPEAKING)
-        try:
-            self.tts.speak(self.acknowledgement)
-        except Exception:
-            log.exception("acknowledgement failed")
-        # Brief cooldown to avoid catching the tail of our own audio.
-        time.sleep(0.4)
-        # Then transition into LISTENING and handle the command.
-        self.set_state(State.LISTENING)
-        self.handle_command()
-        # handle_command always returns to STANDBY (or shutdown).
+            self.set_state(State.WAKE_DETECTED)
+            self._set_wake_enabled(False)
+            self._wake_event.set()
 
-    # ------------------------------------------------------------------
-    # Command pipeline
-    # ------------------------------------------------------------------
-    def handle_command(self) -> None:
-        """Record -> STT -> AI -> TTS -> STANDBY. One full cycle."""
+    def process_pending_wake(self):
+        self._wake_event.clear()
+        if self._shutdown.is_set() or self.state != State.WAKE_DETECTED:
+            return
+        try:
+            self.set_state(State.ACKNOWLEDGING)
+            self.set_state(State.SPEAKING)
+            self._speak(self.acknowledgement)
+            if self._shutdown.wait(self.cooldown_seconds):
+                return
+            self.set_state(State.LISTENING)
+            self.handle_command()
+        except Exception:
+            log.exception("Command failed; recovering to standby")
+        finally:
+            self._back_to_standby()
+
+    def handle_command(self):
         if self._shutdown.is_set():
             return
         try:
             audio = self.recorder.record()
-        except Exception as exc:
-            log.exception("recorder crashed: %s", exc)
-            audio = None
-
-        if audio is None or audio.size == 0:
-            log.info("no speech captured; returning to standby")
-            self._back_to_standby()
-            return
-
-        text = self.stt.transcribe(audio)
-        if not text.strip():
-            log.info("STT returned empty; returning to standby")
-            self._back_to_standby()
-            return
-
-        self.set_state(State.THINKING)
-        self.context.add_user(text)
-        try:
-            reply = self.ai.chat(self.context.messages())
-        except Exception as exc:
-            log.exception("AI chat crashed: %s", exc)
-            reply = "I'm sorry, Sir. Something went wrong while I was thinking."
-        if not reply.strip():
-            reply = "I'm sorry, Sir. I didn't catch a response."
-        self.context.add_assistant(reply)
-        log.info("ai.reply %r", reply)
-
-        self.set_state(State.SPEAKING)
-        try:
-            self.tts.speak(reply)
+            if self._shutdown.is_set():
+                return
+            if audio is None or audio.size == 0:
+                if getattr(self.recorder, "last_error", False):
+                    self._listening_feedback("I couldn't access the microphone. Please check its connection.")
+                elif self.wake is not None:
+                    self._listening_feedback("I didn't hear a question. Say hey Jarvis when you're ready.")
+                return
+            text = self.stt.transcribe(audio).strip()
+            if self._shutdown.is_set():
+                return
+            if not text:
+                self._listening_feedback("I couldn't understand that. Please say hey Jarvis and try again.")
+                return
+            self.set_state(State.THINKING)
+            reply = local_reply(text, self.context)
+            if reply is not None and not is_history_control(text):
+                self.context.add_turn(text, reply)
+            if reply is None:
+                messages = self.context.messages()
+                if messages and messages[0].role == "system":
+                    messages[0].content += " Current local date and time: " + datetime.now().astimezone().isoformat()
+                try:
+                    reply = self.ai.chat(messages + [ChatMessage("user", text)])
+                    if not isinstance(reply, str) or not reply.strip():
+                        raise AIProviderError("I didn't get an answer. Please try rephrasing your question.")
+                    if self._shutdown.is_set():
+                        return
+                    self.context.add_turn(text, reply)
+                except AIProviderError as exc:
+                    reply = str(exc)
+                except Exception:
+                    log.exception("AI request crashed")
+                    reply = "Something went wrong while I was thinking. Please try again."
+            if self._shutdown.is_set():
+                return
+            self.set_state(State.SPEAKING)
+            self._speak(reply)
+            self._shutdown.wait(self.cooldown_seconds)
         except Exception:
-            log.exception("TTS playback failed")
-        # Cooldown before re-enabling wake detection.
-        time.sleep(0.4)
-        self._back_to_standby()
+            log.exception("Recording or transcription failed")
+            self._listening_feedback("I had trouble hearing that. Please try again.")
+        # process_pending_wake owns the single transition back to standby.
+        # A second transition here could overwrite a newly queued wake event.
 
-    def _back_to_standby(self) -> None:
-        if self._shutdown.is_set():
-            return
-        self.set_state(State.STANDBY)
-        self._set_wake_enabled(True)
+    def _listening_feedback(self, message):
+        if not self._shutdown.is_set():
+            self.set_state(State.SPEAKING)
+            self._speak(message)
+            self._shutdown.wait(self.cooldown_seconds)
+
+    def _back_to_standby(self):
+        if not self._shutdown.is_set():
+            self.set_state(State.STANDBY)
+            self._set_wake_enabled(True)

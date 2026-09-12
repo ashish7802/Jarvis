@@ -47,7 +47,8 @@ def _resolve_env_file() -> str | None:
     custom = os.environ.get("JARVIS_ENV_FILE")
     if custom:
         return custom
-    candidate = PROJECT_ROOT / ".env"
+    root = Path(sys.executable).resolve().parent if _is_frozen() else PROJECT_ROOT
+    candidate = root / ".env"
     return str(candidate) if candidate.exists() else None
 
 
@@ -90,6 +91,13 @@ class Settings(BaseSettings):
     # Listening
     listen_timeout: float = 10.0
     silence_timeout: float = 1.5
+    stt_model: str = "base"
+    stt_language: str = "auto"
+    stt_beam_size: int = Field(default=3, ge=1, le=5)
+    user_name: str = ""
+    context_messages: int = Field(default=31, ge=3, le=101)
+    ai_request_timeout: float = Field(default=15.0, ge=5.0, le=60.0)
+    ai_max_attempts: int = Field(default=2, ge=1, le=3)
 
     # AI
     ai_provider: Literal["openai", "gemini", "mock"] = "mock"
@@ -100,6 +108,7 @@ class Settings(BaseSettings):
     # TTS
     tts_provider: Literal["edge", "mock"] = "edge"
     tts_voice: str = "en-US-GuyNeural"
+    tts_hindi_voice: str = "hi-IN-SwaraNeural"
 
     # Hotkey
     hotkey_exit: str = "Ctrl+Shift+J"
@@ -130,15 +139,7 @@ _settings: Settings | None = None
 def _build() -> Settings:
     """Build a Settings instance using the current env file."""
     path = _resolve_env_file()
-    cfg = SettingsConfigDict(
-        env_file=path,
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore",
-    )
-    # Mutate the model_config on the class so BaseSettings picks it up.
-    Settings.model_config = cfg
-    inst = Settings()
+    inst = Settings(_env_file=path)
     inst.logs_dir.mkdir(parents=True, exist_ok=True)
     inst.tts_cache_dir.mkdir(parents=True, exist_ok=True)
     return inst

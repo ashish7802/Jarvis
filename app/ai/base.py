@@ -21,15 +21,20 @@ class AIProvider(ABC):
 
     @abstractmethod
     def chat(self, messages: list[ChatMessage]) -> str:
-        """Return the assistant's reply text. Must not raise on transient
-        errors — providers should catch and return a friendly string."""
+        """Return reply text, or raise AIProviderError with a speakable error."""
+
+    def cancel(self) -> None:
+        """Cancel pending retries during shutdown, when supported."""
+
+    def shutdown(self) -> None:
+        """Release provider resources, when supported."""
 
 
 class AIProviderError(RuntimeError):
     """Raised for unrecoverable provider errors during *initialization*."""
 
 
-def build_provider(name: str, *, openai_key: str = "", gemini_key: str = "", model: str = "") -> AIProvider:
+def build_provider(name: str, *, openai_key: str = "", gemini_key: str = "", model: str = "", request_timeout: float = 15.0, max_attempts: int = 2) -> AIProvider:
     name = (name or "").strip().lower()
     if name == "openai":
         from app.ai.openai_provider import OpenAIProvider
@@ -42,7 +47,7 @@ def build_provider(name: str, *, openai_key: str = "", gemini_key: str = "", mod
 
         if not gemini_key:
             raise AIProviderError("GEMINI_API_KEY is required when AI_PROVIDER=gemini")
-        return GeminiProvider(api_key=gemini_key, model=model or "gemini-1.5-flash")
+        return GeminiProvider(api_key=gemini_key, model=model or "gemini-3.6-flash", request_timeout=request_timeout, max_attempts=max_attempts)
     if name == "mock":
         from app.ai.mock_provider import MockProvider
 

@@ -245,6 +245,7 @@ class OpenWakeWordDetector(WakeWordDetector):
         # Rolling buffer for accumulating 30 ms frames into 80 ms chunks.
         self._accum: np.ndarray = np.zeros((0,), dtype=np.int16)
         self._consecutive_hits: int = 0
+        self._reset_pending = threading.Event()
 
     # -- public API ----------------------------------------------------------
 
@@ -278,6 +279,8 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     def set_enabled(self, enabled: bool) -> None:
         if enabled:
+            if not self._enabled.is_set():
+                self._reset_pending.set()
             self._enabled.set()
         else:
             self._enabled.clear()
@@ -292,7 +295,15 @@ class OpenWakeWordDetector(WakeWordDetector):
             return
         if not self._enabled.is_set():
             self._consecutive_hits = 0
+            self._accum = np.zeros((0,), dtype=np.int16)
             return
+
+        # Only the capture thread touches model state, avoiding reset/predict races.
+        if self._reset_pending.is_set():
+            self._reset_pending.clear()
+            self._accum = np.zeros((0,), dtype=np.int16)
+            self._consecutive_hits = 0
+            self._oww_model.reset()
 
         x = block.reshape(-1).astype(np.int16, copy=False)
         if x.size == 0:
@@ -339,6 +350,8 @@ class OpenWakeWordDetector(WakeWordDetector):
     # -- internals -----------------------------------------------------------
 
     def _load_model(self) -> None:
+        if self._oww_model is not None:
+            return
         try:
             from openwakeword.model import Model  # type: ignore
         except ImportError as exc:
@@ -359,7 +372,9 @@ class OpenWakeWordDetector(WakeWordDetector):
             wakeword_models=[self.model],
             inference_framework=self.inference_framework,
         )
-        self._model_label = label
+        # The runtime may include a version suffix in its prediction key.
+        labels = list(self._oww_model.models)
+        self._model_label = labels[0] if len(labels) == 1 else label
         log.info(
             "openwakeword: loaded model=%r label=%s",
             self.model,
@@ -367,29 +382,24 @@ class OpenWakeWordDetector(WakeWordDetector):
         )
 
     def _run(self) -> None:
-        try:
-            stream = sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=1,
-                dtype="int16",
-                blocksize=self.frame_size,
-            )
-        except Exception as exc:
-            log.exception("openwakeword: cannot open mic: %s", exc)
-            return
-        with stream:
-            while not self._stop_event.is_set():
-                try:
-                    block, _ = stream.read(self.frame_size)
-                except Exception as exc:
-                    log.exception("openwakeword: read error: %s", exc)
-                    break
-                if block.size == 0:
-                    continue
-                try:
-                    self.process(block)
-                except Exception as exc:
-                    log.exception("openwakeword: process error: %s", exc)
+        delay = 1.0
+        while not self._stop_event.is_set():
+            try:
+                with sd.InputStream(samplerate=self.sample_rate, channels=1,
+                                    dtype="int16", blocksize=self.frame_size) as stream:
+                    self._reset_pending.set()
+                    log.info("Wake-word microphone connected")
+                    delay = 1.0
+                    while not self._stop_event.is_set():
+                        block, overflow = stream.read(self.frame_size)
+                        if overflow:
+                            self._reset_pending.set()
+                        if block.size:
+                            self.process(block)
+            except Exception as exc:
+                log.warning("Wake microphone unavailable (%s); retrying in %.0fs", type(exc).__name__, delay)
+                self._stop_event.wait(delay)
+                delay = min(delay * 2, 15.0)
 
 
 def _looks_like_path(s: str) -> bool:
@@ -555,6 +565,12 @@ class PorcupineWakeWord(WakeWordDetector):
 # ---------------------------------------------------------------------------
 
 
+def _ready_openwakeword(**kwargs):
+    detector = OpenWakeWordDetector(**kwargs)
+    detector._load_model()
+    return detector
+
+
 def build_wake_word(
     *,
     enabled: bool,
@@ -590,7 +606,7 @@ def build_wake_word(
 
     if backend == "openwakeword":
         try:
-            return OpenWakeWordDetector(
+            return _ready_openwakeword(
                 model=openwakeword_model or keyword,
                 threshold=openwakeword_threshold,
             )
@@ -614,7 +630,7 @@ def build_wake_word(
                     "Porcupine unavailable (%s) — trying openWakeWord", exc
                 )
                 try:
-                    return OpenWakeWordDetector(
+                    return _ready_openwakeword(
                         model=openwakeword_model or keyword,
                         threshold=openwakeword_threshold,
                     )
@@ -627,7 +643,7 @@ def build_wake_word(
                     return EnergyGateWakeWord(keyword=keyword)
         # No Porcupine key — try openWakeWord as the free default.
         try:
-            return OpenWakeWordDetector(
+            return _ready_openwakeword(
                 model=openwakeword_model or keyword,
                 threshold=openwakeword_threshold,
             )
@@ -644,7 +660,7 @@ def build_wake_word(
     # Unknown backend name: try openWakeWord, then energy.
     log.warning("unknown wakeword_backend=%r — trying openWakeWord", backend)
     try:
-        return OpenWakeWordDetector(
+        return _ready_openwakeword(
             model=openwakeword_model or keyword,
             threshold=openwakeword_threshold,
         )

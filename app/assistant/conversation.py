@@ -1,64 +1,49 @@
-"""Short-term in-memory conversation context.
-
-Explicitly out of scope: persistent storage, embeddings, RAG, long-term
-memory. We only keep a rolling window of the last N non-system turns.
-The system prompt is always pinned at the head of the list.
-"""
-
-from __future__ import annotations
-
-from collections import deque
+"""Session-only history, trimmed at complete turn boundaries."""
 from dataclasses import dataclass, field
-from typing import Deque, List
-
 from app.ai.base import ChatMessage
 
 
 @dataclass
 class ConversationContext:
     system_prompt: str
-    max_messages: int = 20
-    _messages: List[ChatMessage] = field(init=False)
+    max_messages: int = 21
+    max_characters: int = 24000
+    _messages: list[ChatMessage] = field(init=False)
 
-    def __post_init__(self) -> None:
-        self._messages = []
-        if self.system_prompt:
-            self._messages.append(ChatMessage(role="system", content=self.system_prompt))
+    def __post_init__(self):
+        if self.max_messages < 3 or self.max_characters < 1000:
+            raise ValueError("Conversation limits are too small")
+        self.clear()
 
-    def add_user(self, content: str) -> None:
-        self._add(ChatMessage(role="user", content=content))
+    def add_user(self, content):
+        self._add(ChatMessage("user", content))
 
-    def add_assistant(self, content: str) -> None:
-        self._add(ChatMessage(role="assistant", content=content))
+    def add_assistant(self, content):
+        self._add(ChatMessage("assistant", content))
 
-    def _add(self, msg: ChatMessage) -> None:
-        # Cap total size (including system) to max_messages by dropping
-        # the oldest non-system message(s) until under the cap.
-        self._messages.append(msg)
-        while len(self._messages) > self.max_messages:
-            # Find the oldest non-system message and drop it.
-            drop_idx = -1
-            for i, m in enumerate(self._messages):
-                if m.role != "system":
-                    drop_idx = i
-                    break
-            if drop_idx == -1:
-                break  # only system messages left
-            del self._messages[drop_idx]
+    def add_turn(self, user, assistant):
+        self.add_user(user)
+        self.add_assistant(assistant)
 
-    def clear(self) -> None:
-        self._messages = []
-        if self.system_prompt:
-            self._messages.append(ChatMessage(role="system", content=self.system_prompt))
+    def _add(self, message):
+        self._messages.append(ChatMessage(message.role, message.content[:8000]))
+        first = 1 if self.system_prompt else 0
+        while (len(self._messages) > self.max_messages or
+               sum(len(m.content) for m in self._messages) > self.max_characters):
+            next_user = next((i for i in range(first + 1, len(self._messages))
+                              if self._messages[i].role == "user"), None)
+            if next_user is None:
+                break
+            del self._messages[first:next_user]
 
-    def messages(self) -> List[ChatMessage]:
-        return list(self._messages)
+    def clear(self):
+        self._messages = [ChatMessage("system", self.system_prompt)] if self.system_prompt else []
 
-    def __len__(self) -> int:
+    def messages(self):
+        return [ChatMessage(m.role, m.content) for m in self._messages]
+
+    def __len__(self):
         return len(self._messages)
 
-    def last_assistant(self) -> str | None:
-        for m in reversed(self._messages):
-            if m.role == "assistant":
-                return m.content
-        return None
+    def last_assistant(self):
+        return next((m.content for m in reversed(self._messages) if m.role == "assistant"), None)

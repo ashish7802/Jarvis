@@ -29,6 +29,12 @@ def _startup_dir() -> Path:
 def _default_target() -> Path:
     """Best-effort path to the packaged JARVIS.exe."""
     # When packaged with PyInstaller --onedir, this points to dist/JARVIS/JARVIS.exe
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve()
+    if os.environ.get("LOCALAPPDATA"):
+        installed = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "JARVIS" / "JARVIS.exe"
+        if installed.is_file():
+            return installed
     project_root = Path(__file__).resolve().parent.parent.parent
     candidate = project_root / "dist" / "JARVIS" / "JARVIS.exe"
     return candidate
@@ -77,7 +83,7 @@ def _create_shortcut(target: Path, shortcut: Path) -> None:
         s = shell.CreateShortcut(str(shortcut))
         s.Targetpath = str(target)
         s.WorkingDirectory = str(target.parent)
-        s.WindowStyle = 7  # minimised / hidden
+        s.WindowStyle = 1  # normal, visible desktop window on login
         s.IconLocation = str(target)
         s.Description = "JARVIS voice assistant"
         s.save()
@@ -96,7 +102,7 @@ def _create_shortcut(target: Path, shortcut: Path) -> None:
         + "');"
         + "$s.TargetPath = '" + str(target).replace("'", "''") + "';"
         + "$s.WorkingDirectory = '" + str(target.parent).replace("'", "''") + "';"
-        + "$s.WindowStyle = 7;"
+        + "$s.WindowStyle = 1;"
         + "$s.IconLocation = '" + str(target).replace("'", "''") + "';"
         + "$s.Description = 'JARVIS voice assistant';"
         + "$s.Save();"
@@ -109,27 +115,36 @@ def _create_shortcut(target: Path, shortcut: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
+    import json
+    from app.system import autostart
 
     parser = argparse.ArgumentParser(description="Manage Windows auto-start for JARVIS")
     g = parser.add_mutually_exclusive_group(required=True)
-    g.add_argument("--install", action="store_true", help="Install the Startup shortcut")
-    g.add_argument("--uninstall", action="store_true", help="Remove the Startup shortcut")
+    g.add_argument("--install", action="store_true", help="Launch at Windows sign-in and unlock")
+    g.add_argument("--uninstall", action="store_true", help="Remove JARVIS automatic startup")
+    g.add_argument("--run", action="store_true", help="Test the registered Windows startup task now")
     g.add_argument("--status", action="store_true", help="Show current status")
     parser.add_argument("--target", type=Path, default=None, help="Path to JARVIS.exe")
     args = parser.parse_args(argv)
 
     if args.status:
-        print("installed" if is_installed() else "not installed")
+        print(json.dumps(autostart.status(), indent=2))
+        return 0
+    if args.run:
+        autostart.run_task()
         return 0
     if args.install:
         try:
-            sc = install(args.target)
+            info = autostart.install_task(args.target or _default_target())
+            # Remove the old sign-in-only shortcut only after registration works.
+            uninstall()
         except FileNotFoundError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
-        print(f"Installed: {sc}")
+        print(f"Installed login/unlock task: {info['name']} -> {info['target']}")
         return 0
     if args.uninstall:
+        autostart.uninstall_task()
         sc = uninstall()
         print(f"Removed: {sc}" if sc else "No shortcut to remove")
         return 0

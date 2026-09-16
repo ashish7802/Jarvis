@@ -1,3 +1,4 @@
+param([switch]$Clean)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $jarvisPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
@@ -11,8 +12,11 @@ if (Test-Path -LiteralPath '.cache\runtime') {
 }
 & $jarvisPython -m app.setup_models
 if ($LASTEXITCODE -ne 0) { throw 'Speech model setup failed.' }
+& $jarvisPython -c 'from PySide6.QtWidgets import QApplication; from app.hud_widgets import app_icon; app = QApplication([]); assert app_icon().pixmap(128, 128).save(".cache/jarvis.ico")'
+if ($LASTEXITCODE -ne 0) { throw 'Desktop icon generation failed.' }
 $jarvisBuildArgs = @(
     '--noconfirm', '--noconsole', '--name', 'JARVIS', '--paths', '.',
+    '--icon', '.cache\jarvis.ico',
     '--collect-all', 'faster_whisper', '--collect-all', 'ctranslate2',
     '--collect-all', 'edge_tts', '--collect-all', 'sounddevice',
     '--collect-all', 'soundfile', '--collect-all', 'openwakeword',
@@ -23,7 +27,11 @@ $jarvisBuildArgs = @(
 # Build into a fresh folder. PyInstaller's in-place cleanup can fail on
 # OneDrive's read-only directories and would leave a half-deleted installation.
 $jarvisStage = Join-Path $PSScriptRoot ('build\package-' + [guid]::NewGuid().ToString('N'))
-$jarvisBuildArgs += @('--distpath', $jarvisStage)
+# Keep intermediate files outside OneDrive and retain PyInstaller's normal cache.
+# Use -Clean after changing native runtimes or to troubleshoot packaging.
+$jarvisWork = Join-Path $env:LOCALAPPDATA 'JARVIS\pyinstaller-work'
+$jarvisBuildArgs += @('--distpath', $jarvisStage, '--workpath', $jarvisWork)
+if ($Clean) { $jarvisBuildArgs += '--clean' }
 if (Test-Path -LiteralPath '.cache\runtime') {
     $jarvisBuildArgs += @('--add-binary', '.cache\runtime\*.dll;.cache\runtime')
 }
@@ -31,7 +39,15 @@ $jarvisBuildArgs += 'app\main.py'
 $jarvisPackagedEnv = if (Test-Path -LiteralPath 'dist\JARVIS\.env') {
     [System.IO.File]::ReadAllBytes((Join-Path $PSScriptRoot 'dist\JARVIS\.env'))
 } else { $null }
-& $jarvisPython -c 'import app; import PyInstaller.__main__; PyInstaller.__main__.run()' @jarvisBuildArgs
+# Qt uses Windows' ICU library. Developer runtimes (for example Poppler) can
+# put an incompatible icuuc.dll on PATH; never package those unrelated DLLs.
+$jarvisSavedPath = $env:PATH
+try {
+    $env:PATH = @((Split-Path $jarvisPython), (Join-Path $env:SystemRoot 'System32'), $env:SystemRoot) -join ';'
+    & $jarvisPython -c 'import app; import PyInstaller.__main__; PyInstaller.__main__.run()' @jarvisBuildArgs
+} finally {
+    $env:PATH = $jarvisSavedPath
+}
 if ($LASTEXITCODE -ne 0) { throw 'JARVIS build failed.' }
 $jarvisStagedApp = Join-Path $jarvisStage 'JARVIS'
 $jarvisDestination = Join-Path $PSScriptRoot 'dist\JARVIS'

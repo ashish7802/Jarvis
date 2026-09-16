@@ -26,6 +26,7 @@ class STTService:
         self.compute_type = compute_type
         self.language = None if language in ("auto", "") else language
         self.beam_size = beam_size
+        self.last_language = None
         self._model = None
         self._lock = threading.Lock()
 
@@ -100,8 +101,11 @@ class STTService:
             # is written to disk, and float64 input keeps its original volume.
             segments, _info = self._model.transcribe(
                 audio_f, beam_size=self.beam_size, vad_filter=True,
-                language=self.language, condition_on_previous_text=False,
+                language=self.language, condition_on_previous_text=False, task="transcribe",
+                initial_prompt=("Hello, Jarvis. Hindi and English conversation. नमस्ते, जार्विस। हिंदी और इंग्लिश में बातचीत।"
+                                if self.language in (None, "hi") else None),
             )
+            self.last_language = getattr(_info, "language", self.language)
             text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
             log.debug("STT -> %r", text)
             return text

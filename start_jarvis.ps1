@@ -1,25 +1,17 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$env:JARVIS_ENV_FILE = Join-Path $PSScriptRoot '.env'
-$jarvisPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
-$jarvisExe = Join-Path $PSScriptRoot 'dist\JARVIS\JARVIS.exe'
+$jarvisExe = Join-Path $env:LOCALAPPDATA 'Programs\JARVIS\JARVIS.exe'
+if (-not (Test-Path -LiteralPath $jarvisExe)) {
+    $jarvisExe = Join-Path $PSScriptRoot 'dist\JARVIS\JARVIS.exe'
+}
+# The desktop shows initialization progress and recoverable errors itself.
+# Do not load the speech models twice or hide the requested application window.
 if (Test-Path -LiteralPath $jarvisExe) {
-    $jarvisCheckLog = Join-Path $env:APPDATA 'JARVIS\logs\jarvis.log'
-    $jarvisCheck = Start-Process -FilePath $jarvisExe -ArgumentList '--check' -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -Wait -PassThru
-    $jarvisCheckCode = $jarvisCheck.ExitCode
+    $jarvisDirectory = Split-Path -Parent $jarvisExe
+    $env:JARVIS_ENV_FILE = Join-Path $jarvisDirectory '.env'
+    Start-Process -FilePath $jarvisExe -WorkingDirectory $jarvisDirectory
 } else {
-    $jarvisCheckLog = Join-Path $PSScriptRoot 'logs\jarvis.log'
-    & $jarvisPython -m app.main --check
-    $jarvisCheckCode = $LASTEXITCODE
+    $env:JARVIS_ENV_FILE = Join-Path $PSScriptRoot '.env'
+    Start-Process -FilePath (Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe') -ArgumentList '-m','app.main' -WorkingDirectory $PSScriptRoot
 }
-if ($jarvisCheckCode -ne 0) {
-    Write-Host "JARVIS could not start. Check .env and $jarvisCheckLog"
-    Read-Host 'Press Enter to close'
-    exit 1
-}
-if (Test-Path -LiteralPath $jarvisExe) {
-    Start-Process -FilePath $jarvisExe -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
-} else {
-    Start-Process -FilePath (Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe') -ArgumentList '-m','app.main' -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
-}
-Write-Host 'JARVIS is starting. Say "hey Jarvis" after the greeting. Ctrl+Shift+J stops it.'
+Write-Host 'JARVIS desktop is opening. Say "hey Jarvis" or click the core.'

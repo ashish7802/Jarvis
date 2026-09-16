@@ -120,6 +120,7 @@ def provider_with(responses):
     provider = GeminiProvider.__new__(GeminiProvider)
     provider._model_name = "test-model"
     provider._cancelled = threading.Event()
+    provider.turn_cancelled = threading.Event()
     provider.max_attempts = 2
     calls = []
     def generate_content(**kwargs):
@@ -139,7 +140,7 @@ class ApiError(Exception):
 
 def test_gemini_retries_temporary_failure(monkeypatch):
     provider, calls = provider_with([ApiError(503), "Recovered"])
-    monkeypatch.setattr(provider._cancelled, "wait", lambda delay: False)
+    monkeypatch.setattr(provider.turn_cancelled, "wait", lambda delay: False)
     assert provider.chat([ChatMessage("user", "Hi")]) == "Recovered"
     assert len(calls) == 2
 

@@ -28,6 +28,7 @@ def test_gemini_preserves_history_and_system_instruction():
     provider = GeminiProvider.__new__(GeminiProvider)
     import threading
     provider._cancelled = threading.Event()
+    provider.turn_cancelled = threading.Event()
     provider.max_attempts = 2
     provider._client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
     provider._model_name = "test-model"

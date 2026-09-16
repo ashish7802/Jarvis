@@ -246,6 +246,18 @@ class OpenWakeWordDetector(WakeWordDetector):
         self._accum: np.ndarray = np.zeros((0,), dtype=np.int16)
         self._consecutive_hits: int = 0
         self._reset_pending = threading.Event()
+        from app.audio.hearing import NoiseFloor
+        self.noise_floor = NoiseFloor()
+        self.hearing_profile = "balanced"
+        self.on_audio = None
+        self.on_microphone = None
+        self._level_frames = 0
+
+    def set_hearing_profile(self, profile):
+        from app.audio.hearing import PROFILES
+        if profile not in PROFILES:
+            raise ValueError("Unknown hearing profile")
+        self.hearing_profile = profile
 
     # -- public API ----------------------------------------------------------
 
@@ -309,6 +321,15 @@ class OpenWakeWordDetector(WakeWordDetector):
         if x.size == 0:
             return
 
+        from app.audio.hearing import PROFILES, boost_pcm, meter_value
+        level = float(np.sqrt(np.mean(x.astype(np.float32) ** 2)))
+        self.noise_floor.update(level)
+        self._level_frames += 1
+        if self.on_audio and self._level_frames % 3 == 0:
+            self.on_audio({"level": meter_value(level), "active": False, "source": "wake",
+                           "clipping": bool(np.any(np.abs(x.astype(np.int32)) >= 32000))})
+        x = boost_pcm(x, PROFILES[self.hearing_profile].wake_gain)
+
         # Append to accumulator; drain OWW_CHUNK_SAMPLES-sized chunks.
         if self._accum.size:
             self._accum = np.concatenate([self._accum, x])
@@ -355,9 +376,10 @@ class OpenWakeWordDetector(WakeWordDetector):
         try:
             from openwakeword.model import Model  # type: ignore
         except ImportError as exc:
+            log.exception("Cannot import the openWakeWord runtime")
             raise RuntimeError(
-                "openwakeword is not installed; "
-                "run `pip install openwakeword onnxruntime`"
+                "openWakeWord or a native dependency could not load; "
+                "check the diagnostic log and installed dependencies"
             ) from exc
 
         # openwakeword.Model accepts either a name ("hey_jarvis") or a
@@ -389,6 +411,8 @@ class OpenWakeWordDetector(WakeWordDetector):
                                     dtype="int16", blocksize=self.frame_size) as stream:
                     self._reset_pending.set()
                     log.info("Wake-word microphone connected")
+                    if self.on_microphone:
+                        self.on_microphone(True)
                     delay = 1.0
                     while not self._stop_event.is_set():
                         block, overflow = stream.read(self.frame_size)
@@ -398,6 +422,8 @@ class OpenWakeWordDetector(WakeWordDetector):
                             self.process(block)
             except Exception as exc:
                 log.warning("Wake microphone unavailable (%s); retrying in %.0fs", type(exc).__name__, delay)
+                if self.on_microphone:
+                    self.on_microphone(False)
                 self._stop_event.wait(delay)
                 delay = min(delay * 2, 15.0)
 

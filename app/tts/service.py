@@ -27,7 +27,15 @@ def _split_sentences(text):
             current = (current + " " + word).strip()
         if current:
             pieces.append(current)
-    return pieces
+    # Synthesize short replies together so each sentence doesn't need another
+    # network round trip before it can play. Keep long replies bounded.
+    chunks = []
+    for piece in pieces:
+        if chunks and len(chunks[-1]) + len(piece) + 1 <= 500:
+            chunks[-1] += " " + piece
+        else:
+            chunks.append(piece)
+    return chunks
 
 
 class TTSService:
@@ -38,6 +46,8 @@ class TTSService:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._player = None
         self._stop = threading.Event()
+        self.turn_cancelled = threading.Event()
+        self.language_hint = "en"
         self._closed = threading.Event()
         self._loop = None
         self._loop_thread = None
@@ -47,6 +57,9 @@ class TTSService:
 
     def attach_player(self, player):
         self._player = player
+
+    def _interrupted(self):
+        return self._stop.is_set() or self._closed.is_set() or self.turn_cancelled.is_set()
 
     def stop(self):
         self._stop.set()
@@ -75,10 +88,15 @@ class TTSService:
         future = asyncio.run_coroutine_threadsafe(self._synthesize_async(text), loop)
         self._pending = future
         try:
-            if self._stop.is_set():
-                future.cancel()
-                return None
-            return future.result(timeout=20)
+            import time
+            deadline = time.monotonic() + 20
+            while not self._interrupted() and time.monotonic() < deadline:
+                try:
+                    return future.result(timeout=.05)
+                except concurrent.futures.TimeoutError:
+                    continue
+            future.cancel()
+            return None
         except (concurrent.futures.TimeoutError, concurrent.futures.CancelledError):
             future.cancel()
             return None
@@ -100,7 +118,7 @@ class TTSService:
 
     async def _synthesize_async(self, text):
         import edge_tts
-        voice = self.hindi_voice if re.search(r"[\u0900-\u097f]", text) else self.voice
+        voice = self.hindi_voice if re.search(r"[\u0900-\u097f]", text) or self.language_hint == "hi" else self.voice
         key = (voice, text)
         path = self.cache_dir / f"tts-{uuid.uuid4().hex}.mp3"
         complete = False
@@ -125,11 +143,11 @@ class TTSService:
             log.warning("Speech synthesis failed: %s", type(exc).__name__)
             return None
         finally:
-            if not complete or self._stop.is_set():
+            if not complete or self._interrupted():
                 path.unlink(missing_ok=True)
 
     def speak(self, text):
-        if self._closed.is_set():
+        if self._closed.is_set() or self.turn_cancelled.is_set():
             return False
         self._stop.clear()
         sentences = _split_sentences(text)
@@ -140,7 +158,7 @@ class TTSService:
         for sentence in sentences:
             path = None
             for attempt in range(2):
-                if self._stop.is_set():
+                if self._interrupted():
                     return False
                 try:
                     path = self._synthesize_sync(sentence)
@@ -153,7 +171,7 @@ class TTSService:
             if path is None:
                 return False
             try:
-                if self._stop.is_set():
+                if self._interrupted():
                     return False
                 if not self._player.play_file(path):
                     return False
@@ -164,7 +182,7 @@ class TTSService:
                 path.unlink(missing_ok=True)
             if self._stop.wait(0.05):
                 return False
-        return not self._stop.is_set()
+        return not self._interrupted()
 
     def shutdown(self):
         self.cancel()

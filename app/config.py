@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     # Listening
     listen_timeout: float = 10.0
     silence_timeout: float = 1.5
+    hearing_profile: Literal["soft", "balanced", "noisy"] = "soft"
+    language_mode: Literal["auto", "hi", "hinglish", "en"] = "auto"
     stt_model: str = "base"
     stt_language: str = "auto"
     stt_beam_size: int = Field(default=3, ge=1, le=5)

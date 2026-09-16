@@ -38,6 +38,7 @@ class GeminiProvider(AIProvider):
         })
         self.max_attempts = max_attempts
         self._cancelled = threading.Event()
+        self.turn_cancelled = threading.Event()
         self._model_name = model
         log.info("GeminiProvider initialised (model=%s)", self._model_name)
 
@@ -46,7 +47,7 @@ class GeminiProvider(AIProvider):
         if not history:
             return ""
         for attempt in range(self.max_attempts):
-            if self._cancelled.is_set():
+            if self._cancelled.is_set() or self.turn_cancelled.is_set():
                 raise AIProviderError("The request was cancelled.")
             try:
                 resp = self._client.models.generate_content(
@@ -64,7 +65,7 @@ class GeminiProvider(AIProvider):
                 transient = code in (408, 429, 500, 502, 503, 504) or isinstance(exc, httpx.TransportError)
                 log.warning("Gemini request failed: type=%s code=%s attempt=%s", type(exc).__name__, code, attempt + 1)
                 if transient and attempt + 1 < self.max_attempts:
-                    self._cancelled.wait(0.5 * (2 ** attempt))
+                    self.turn_cancelled.wait(0.5 * (2 ** attempt))
                     continue
                 if code in (401, 403):
                     message = "My Gemini access was denied. Please check the API key and its permissions."

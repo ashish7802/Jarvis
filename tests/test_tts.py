@@ -6,7 +6,7 @@ from app.tts.service import TTSService, _split_sentences
 def test_split_sentences_basic():
     s = TTSService()
     out = _split_sentences("Hello. How are you? I am well!")
-    assert out == ["Hello.", "How are you?", "I am well!"]
+    assert out == ["Hello. How are you? I am well!"]
 
 
 def test_split_sentences_empty():

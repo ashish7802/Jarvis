@@ -2,6 +2,77 @@
 
 A Windows-native, voice-first personal assistant.
 
+### Animated desktop HUD
+
+JARVIS now opens as a native Qt desktop app with a cyan, animated reactor and
+a minimal HUD. There is no browser, local website, or web view. The core changes
+its motion while listening, understanding, thinking and replying.
+
+- Say **"hey Jarvis"**, wait for the acknowledgement, then ask your question.
+  You can also click the core or press **Ctrl+Space** inside the app.
+- **Soft voice** mode is the default: a noise-relative recording threshold,
+  450 ms onset buffer and capped amplification help capture quieter questions.
+  Open controls with **F2** to choose **Balanced** or **Noisy room**; the choice
+  is saved across restarts. Exact commands **"soft voice mode"**, **"balanced
+  mode"** and **"noisy room mode"** change it without a cloud AI request.
+- The core reacts to measured microphone volume while recording. The hidden
+  controls include a live input meter and clipping/connection feedback. Wake
+  microphone disconnects are retried automatically. Soft mode works best in
+  a quiet room; it cannot recover speech drowned out by noise or guarantee
+  whisper/far-field recognition. Use Noisy room near a fan or traffic.
+- **Escape** or a second core click cancels the current turn. Recording and
+  playback stop promptly; an in-flight transcription or cloud request must
+  finish before the next question, and its late answer is discarded. You can
+  keep typing a draft while Jarvis is busy. Short spoken replies are synthesized
+  together to avoid a separate network delay between every sentence.
+- **Auto language** understands Hindi, Roman Hindi/Hinglish and English and
+  follows the latest question. Hindi words in replies use Devanagari so the
+  Hindi voice pronounces them naturally; English technical terms stay readable.
+  Say **"Hindi mein baat karo"**, **"speak English"**, **"Hinglish mein baat karo"**
+  or **"meri language mein baat karo"**. F2 also offers a saved Language selector.
+  Hindi/Hinglish mode locks recognition to Hindi; English locks it to English;
+  Auto restores language detection. Speech is transcribed, not translated.
+  For better Hindi recognition on a CPU, `STT_MODEL=small` with
+  `STT_BEAM_SIZE=1` is available; it needs roughly 485 MB of downloaded model
+  data. Run `python -m app.setup_models` before building/installing after a
+  model change. The installer includes downloaded models for offline startup.
+- Conversation appears when you speak, with a type-on answer animation. It
+  hides after 45 seconds of inactivity. **"Show chat"** keeps it visible;
+  **"hide chat"** hides it. Hidden chat still remains in this session's memory.
+- Controls stay hidden by default. Say **"show controls"**, **"controls dikhao"**,
+  or **"settings dikhao"** to reveal them. **"Hide controls"** closes them.
+  **F2** is the keyboard fallback. Hindi equivalents such as **"सेटिंग्स दिखाओ"**
+  and **"चैट दिखाओ"** work after speech recognition.
+- The controls panel contains microphone pause/resume, spoken replies on/off,
+  typed messages, new chat and diagnostic logs. Pausing closes the wake microphone
+  stream. Click the core or press Ctrl+Space to resume a paused microphone;
+  then speak after the ready status returns. **"Clear chat"** clears both the
+  visible transcript and conversation memory.
+- Closing the window stops the assistant. **Ctrl+Shift+J** also exits. Launching
+  a second copy brings the existing window forward instead of opening another mic.
+- After `powershell -File .\install_desktop.ps1`, the app is installed in
+  `%LOCALAPPDATA%\Programs\JARVIS` and opens at Windows sign-in **and unlock**.
+  The per-user Task Scheduler entry uses the interactive desktop, runs on battery,
+  and retries failed launches. No password or administrator rights are needed.
+  `--headless` remains available for optional background-only use.
+
+Desktop checks: `python -m pytest -q` covers the UI with fake audio/cloud services.
+`python -m app.main --desktop-check` opens a real desktop, verifies model loading,
+local controls, a calculation, a real AI reply and spoken playback, then exits.
+It writes `desktop-check.json` and a screenshot to the app's logs directory.
+`python smoke_pipeline.py` additionally checks actual mic access and uses
+synthesized audio to test wake-word recognition and Whisper. None of these
+checks establish recognition accuracy for every person's voice.
+`python smoke_hearing.py` checks quiet synthetic questions through the recorder
+and real Whisper, a wake phrase at one tenth amplitude, and stationary noise.
+It saves a `hearing-check.json` result and removes its synthesized audio files.
+`python smoke_languages.py` checks real Hindi/English recognition, Gemini replies,
+spoken playback and Roman Hinglish handling using synthetic sample questions.
+
+If a configured wake-word model fails to load, the desktop uses click-to-talk
+and shows a diagnostic message instead of silently reacting to arbitrary noise.
+The explicit `energy` backend and the legacy headless fallback remain available.
+
 ### Conversation and reliability improvements
 
 - Basic arithmetic and percentages use a bounded local calculator, rather than
@@ -25,8 +96,10 @@ A Windows-native, voice-first personal assistant.
   come from the PC's clock. Memory lasts for this running session only.
 - Speech recognition detects the spoken language automatically. English and
   Hindi use the local multilingual Whisper model; Devanagari replies use a
-  Hindi voice. Set `STT_LANGUAGE=en` or `hi` if automatic detection is unreliable
-  for your voice. Hinglish accuracy depends on the model and recording quality.
+  Hindi voice. Choose English or Hindi in the Language selector if automatic
+  detection is unreliable for your voice. `LANGUAGE_MODE` sets the initial
+  preference; the desktop remembers later changes. Hinglish accuracy depends
+  on the model and recording quality.
 - The microphone thread no longer blocks on conversation processing. Detection
   resets after playback and reconnects after microphone interruptions.
 - Temporary Gemini connection/server errors retry once, with a 15-second
@@ -49,8 +122,8 @@ configured. Gemini uses the `google-genai` SDK and `gemini-3.6-flash`.
 
 1. Keep your Gemini API key in `.env` as `GEMINI_API_KEY=...`, with
    `AI_PROVIDER=gemini` and `AI_MODEL=gemini-3.6-flash`.
-2. Double-click `start_jarvis.bat`. It checks initialization, then starts
-   JARVIS in the background.
+2. Double-click `start_jarvis.bat`. The HUD opens and displays initialization
+   progress. After running `install_desktop.ps1`, it opens at sign-in and unlock automatically.
 3. After the greeting, say **"hey Jarvis"**, wait for **"Yes, Sir?"**, then
    speak your question. Press **Ctrl + Shift + J** to stop.
 
@@ -82,9 +155,9 @@ damaging an existing installation. Existing packaged configuration is preserved.
 Use `pip install -r requirements-lock.txt` to reproduce the versions verified
 on this Windows/Python 3.12 installation, including pytest and PyInstaller.
 
-- Starts on Windows login, runs silently in the background (no window).
+- Opens the native desktop HUD at Windows login when its login/unlock task is installed.
 - Waits for the wake word **"Jarvis"**, then listens, thinks, speaks.
-- No browser, no console window, no visible UI in production.
+- Native animated desktop window, with no browser or console window.
 
 ```
 JARVIS.exe (Windows GUI subsystem, no console)
@@ -111,10 +184,11 @@ cloud endpoints depending on configuration.
 
 ### Install the packaged EXE (recommended for users)
 
-1. Copy `dist\JARVIS\` to a stable location, e.g.
-   `C:\Apps\JARVIS\`.
-2. Double-click `JARVIS.exe`. The greeting plays through your speakers
-   and JARVIS waits for "Jarvis". **No window appears.**
+1. From this repository, run `powershell -File .\install_desktop.ps1` after
+   building. This copies the app to `%LOCALAPPDATA%\Programs\JARVIS`, adds a
+   Start menu shortcut and registers launch at sign-in and unlock.
+2. Open **JARVIS** from the Start menu. The native animated window opens, the
+   greeting plays through your speakers, and JARVIS waits for "hey Jarvis".
 3. Press **Ctrl + Shift + J** at any time for an emergency shutdown.
 
 JARVIS stores its logs and TTS cache in
@@ -127,8 +201,9 @@ and `./tts_cache/` when running from source.
 python -m app.system.startup --install
 ```
 
-This places a shortcut in the user's Startup folder
-(`shell:startup`) pointing at the packaged `JARVIS.exe`. To remove:
+This registers the current user's login/unlock task for the installed EXE (or
+the `dist` EXE if no local installation exists). For an installation outside
+OneDrive, run `powershell -File .\install_desktop.ps1` after building. To remove:
 
 ```bat
 python -m app.system.startup --uninstall
@@ -144,8 +219,7 @@ Copy `.env.example` to `.env` and edit:
 copy .env.example .env
 ```
 
-The packaged EXE looks for `.env` in its working directory (the folder
-that holds `JARVIS.exe`), or you can point it elsewhere via
+The packaged EXE looks for `.env` next to `JARVIS.exe`, or you can point it elsewhere via
 `JARVIS_ENV_FILE`.
 
 Key values:
@@ -268,8 +342,9 @@ To switch voice, set `TTS_VOICE` in `.env` (e.g.
 
 ## Startup
 
-JARVIS can start automatically on Windows login via a shortcut in the
-Startup folder.
+JARVIS starts at sign-in (after 10 seconds) and workstation unlock (after
+3 seconds) using a per-user Windows scheduled task. Unlocking an existing
+session is different from a new sign-in; both are handled.
 
 ```bat
 python -m app.system.startup --install     :: install
@@ -277,9 +352,12 @@ python -m app.system.startup --status      :: check
 python -m app.system.startup --uninstall   :: remove
 ```
 
-The shortcut points at the packaged `JARVIS.exe`, **not** at Python
-or `run_dev.bat`. The shortcut is created with `WindowStyle = 7`
-(hidden) so JARVIS launches with no visible UI.
+The task launches the native EXE on your interactive desktop without a console
+or stored password. Battery power and network availability do not block the
+window from opening. `python -m app.system.startup --run` exercises the same
+registered action without signing you out. `--status` reports the actual task,
+its target, enabled flag, last result, and trigger XML. The old Startup shortcut
+is removed only after the task is successfully registered.
 
 ---
 
@@ -331,11 +409,15 @@ Produces `dist\JARVIS\JARVIS.exe` (PyInstaller, `--noconsole`,
 one-folder). The folder is self-contained — end users do **not** need
 Python installed.
 
-After building, you can install the auto-start shortcut:
+After building, install the app outside OneDrive and register automatic startup:
 
-```bat
-python -m app.system.startup --install
+```powershell
+.\install_desktop.ps1
 ```
+
+Close the installed app before updating. The installer preserves its `.env`,
+keeps the previous installation as a backup, and adds a Start menu shortcut.
+`build.ps1 -Clean` clears packaging caches when native dependencies change.
 
 ---
 
@@ -364,10 +446,10 @@ python -m app.system.startup --install
 - **TTS failure** — check `logs/jarvis.log` for the underlying
   exception. JARVIS logs the error and continues; no spoken reply
   is delivered for that command.
-- **Startup shortcut issue** — re-run
-  `python -m app.system.startup --install`. Inspect the shortcut
-  properties to confirm `Target` is the packaged `JARVIS.exe`,
-  not `python.exe` or `run_dev.bat`.
+- **Not opening at sign-in/unlock** — run `python -m app.system.startup --status`.
+  Verify the task is enabled and its target exists. Use `--run` to test the
+  registered launch action, or rerun `install_desktop.ps1` to repair the local
+  installation and task. Logs are under `%APPDATA%\JARVIS\logs`.
 
 ---
 

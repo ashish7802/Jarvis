@@ -1,8 +1,8 @@
 """JARVIS entrypoint.
 
 Usage:
-    python -m app.main           # dev mode (console visible)
-    python -m app.main --dev     # explicit dev mode
+    python -m app.main           # native desktop window
+    python -m app.main --headless # optional background-only mode
     python -m app.main --check   # verify config & services init, then exit
 
 In production the app is launched as `JARVIS.exe` (PyInstaller
@@ -91,11 +91,74 @@ def main(argv: Optional[list[str]] = None) -> int:
     instance = SingleInstance()
     if not instance.acquire():
         # Do not open the shared log or microphone in a duplicate process.
+        from app.desktop import activate_existing_window
+        activate_existing_window()
         return 0
     try:
-        return _run(args)
+        if "--desktop-check" in args:
+            from app.desktop_check import run_check
+            return run_check(desktop_factory)
+        if "--headless" in args:
+            return _run(args)
+        from app.desktop import run_desktop
+        return run_desktop(desktop_factory)
     finally:
         instance.release()
+
+
+def desktop_factory(on_event):
+    from app.config import reset_settings_cache
+    reset_settings_cache()
+    _configure()
+    settings = get_settings()
+    return build_engine(settings, on_event=on_event, desktop=True), settings
+
+
+def build_engine(settings, on_event=None, desktop=False):
+    """Shared initialization for the GUI, headless mode and --check."""
+    services = []
+    def progress(message):
+        if on_event is not None:
+            on_event("progress", message)
+    try:
+        progress("Connecting your AI provider…")
+        ai = _build_ai(settings)
+        services.append(ai)
+        progress("Loading speech recognition…")
+        stt = _build_stt(settings)
+        services.append(stt)
+        stt._ensure_model()
+        progress("Preparing Jarvis's voice…")
+        tts = _build_tts(settings)
+        services.append(tts)
+        recorder = Recorder(max_seconds=settings.listen_timeout,
+                            silence_timeout=settings.silence_timeout,
+                            hearing_profile=settings.hearing_profile)
+        player = Player()
+        tts.attach_player(player)
+        progress("Preparing the wake-word listener…")
+        wake = _build_wake(settings)
+        if desktop and wake is not None and wake.name == "energy" and settings.wakeword_backend != "energy":
+            # The clickable core provides a manual fallback without reacting to noise.
+            wake = None
+            if on_event is not None:
+                on_event("notice", "Wake-word detection couldn't load. Click the core or press Ctrl+Space to speak. Open controls for diagnostic logs.")
+        return AssistantEngine(
+            ai=ai, stt=stt, tts=tts, wake=wake, recorder=recorder, player=player,
+            startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled else None,
+            startup_greeting_delay=0 if desktop else settings.startup_greeting_delay,
+            acknowledgement="Yes, Sir?", user_name=settings.user_name,
+            context_messages=settings.context_messages, on_event=on_event,
+            language_mode=settings.language_mode,
+            continuous_without_wake=not desktop,
+        )
+    except Exception:
+        for service in reversed(services):
+            try:
+                getattr(service, "shutdown", lambda: None)()
+            except Exception:
+                logging.getLogger("jarvis.main").exception("Initialization cleanup failed")
+        raise
 
 
 def _run(argv=None) -> int:
@@ -113,55 +176,17 @@ def _run(argv=None) -> int:
 
     # Construct all services. Catch *initialization* errors here so we
     # don't loop a broken assistant.
-    services = []
     try:
-        ai = _build_ai(settings)
-        services.append(ai)
-        log.info("ai ready: %s", ai.name)
-        stt = _build_stt(settings)
-        services.append(stt)
-        # Touch STT to load the model once now, not in the middle of
-        # the first user command.
-        stt._ensure_model()  # noqa: SLF001
-        log.info("stt ready")
-        tts = _build_tts(settings)
-        services.append(tts)
-        recorder = Recorder(
-            max_seconds=settings.listen_timeout,
-            silence_timeout=settings.silence_timeout,
-        )
-        player = Player()
-        tts.attach_player(player)
-        wake = _build_wake(settings)
-        log.info("wake ready: %s", wake.name if wake else "disabled")
+        engine = build_engine(settings)
     except Exception as exc:
         log.exception("FATAL: initialization failed: %s", exc)
-        for service in reversed(services):
-            try:
-                getattr(service, "shutdown", lambda: None)()
-            except Exception:
-                log.exception("Initialization cleanup failed")
         return 3
 
     if check_only:
         log.info("--check: all services initialised. exiting.")
-        for service in (ai, stt, tts):
-            getattr(service, "shutdown", lambda: None)()
+        engine.request_shutdown()
+        engine._shutdown_sequence()
         return 0
-
-    engine = AssistantEngine(
-        ai=ai,
-        stt=stt,
-        tts=tts,
-        wake=wake,
-        recorder=recorder,
-        player=player,
-        startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled else None,
-        startup_greeting_delay=settings.startup_greeting_delay,
-        acknowledgement="Yes, Sir?",
-        user_name=settings.user_name,
-        context_messages=settings.context_messages,
-    )
 
     hotkey = EmergencyHotkey(settings.hotkey_exit)
     hotkey.set_callback(engine.request_shutdown)
@@ -187,7 +212,7 @@ def _run(argv=None) -> int:
         pass
 
     try:
-        tts.prewarm([engine.acknowledgement])
+        engine.tts.prewarm([engine.acknowledgement])
         engine.run()
     except KeyboardInterrupt:
         engine.request_shutdown()

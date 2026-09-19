@@ -38,9 +38,9 @@ _DESKTOP_COMMANDS = {
     "clear_chat": ("clear chat", "clear the chat", "chat clear karo", "चैट साफ करो", "चैट क्लियर करो"),
 }
 _DESKTOP_REPLIES = {
-    "language_hi": "ज़रूर, अब हिंदी में बात करेंगे।",
+    "language_hi": "ठीक है, हिंदी में बात करते हैं।",
     "language_en": "Sure, I'll speak English now.",
-    "language_hinglish": "बिल्कुल यार, अब Hinglish में बात करेंगे।",
+    "language_hinglish": "Done, अब अपनी वाली Hindi-English mix में बात करते हैं।",
     "language_auto": "I'll match your language: Hindi, Hinglish or English.",
     "hearing_soft": "Soft voice mode is on. I'm more sensitive to quiet speech.",
     "hearing_balanced": "Balanced hearing is on.",

@@ -165,7 +165,7 @@ def test_engine_no_speech_returns_to_standby():
     eng.process_pending_wake()
     assert eng.state == State.STANDBY
     assert eng.ai.calls == []
-    assert eng.tts.spoken[0] == "Yes, Sir?"
+    assert eng.tts.spoken[0] == "Yeah, I'm here."
     assert "didn't hear" in eng.tts.spoken[-1]
 
 

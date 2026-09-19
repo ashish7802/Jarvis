@@ -147,7 +147,7 @@ def build_engine(settings, on_event=None, desktop=False):
             ai=ai, stt=stt, tts=tts, wake=wake, recorder=recorder, player=player,
             startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled else None,
             startup_greeting_delay=0 if desktop else settings.startup_greeting_delay,
-            acknowledgement="Yes, Sir?", user_name=settings.user_name,
+            acknowledgement="Yeah, I'm here.", user_name=settings.user_name,
             context_messages=settings.context_messages, on_event=on_event,
             language_mode=settings.language_mode,
             continuous_without_wake=not desktop,

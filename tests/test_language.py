@@ -107,3 +107,29 @@ def test_hinglish_uses_hindi_voice_and_english_uses_english_voice(monkeypatch, t
         path.unlink()
     asyncio.run(check())
     assert voices == [tts.hindi_voice, tts.voice]
+
+
+def test_hinglish_greeting_sets_first_wake_and_retry_language():
+    from tests.test_engine import FakeRecorder
+    engine = _make_engine(recorder=FakeRecorder(audio=None), cooldown_seconds=0)
+    engine.startup_greeting = "Hey! मैं ready हूँ।"
+    engine.startup()
+    engine._on_wake()
+    engine.process_pending_wake()
+    assert engine.tts.spoken[1] == "हाँ, बोलो।"
+    assert "सुनाई नहीं दिया" in engine.tts.spoken[-1]
+    assert engine.tts.language_hint == "hi"
+    assert not engine.ai.calls
+
+
+def test_casual_local_feedback_keeps_the_language_switch_and_error_information():
+    from app.assistant.language import localize
+    engine = _make_engine(cooldown_seconds=0, on_event=lambda *event: None)
+    engine.startup()
+    engine.submit_text("meri language mein baat karo")
+    engine.process_pending_wake()
+    assert engine.language_mode == "auto"
+    assert "Hindi-English mix" in engine.tts.spoken[-1]
+    message = localize("My Gemini access was denied. Please check the API key and its permissions.", "hi")
+    assert "API key" in message and "permissions" in message
+    assert "कीजिए" not in message

@@ -36,6 +36,12 @@ its motion while listening, understanding, thinking and replying.
   `STT_BEAM_SIZE=1` is available; it needs roughly 485 MB of downloaded model
   data. Run `python -m app.setup_models` before building/installing after a
   model change. The installer includes downloaded models for offline startup.
+- Replies use casual Hindi-English conversation, with everyday words like
+  app, settings and mood instead of formal Hindi translations. English questions
+  still get English replies. Greetings and retry messages are conversational too.
+  Short small talk stays short; follow-ups and light humor are used when helpful,
+  without repeating "Sir" or "yaar" in every answer. You can explicitly request
+  formal or pure Hindi. The assistant remains honest about being an AI.
 - Conversation appears when you speak, with a type-on answer animation. It
   hides after 45 seconds of inactivity. **"Show chat"** keeps it visible;
   **"hide chat"** hides it. Hidden chat still remains in this session's memory.
@@ -68,6 +74,8 @@ and real Whisper, a wake phrase at one tenth amplitude, and stationary noise.
 It saves a `hearing-check.json` result and removes its synthesized audio files.
 `python smoke_languages.py` checks real Hindi/English recognition, Gemini replies,
 spoken playback and Roman Hinglish handling using synthetic sample questions.
+`python smoke_style.py` generates real casual conversation samples, plays Hindi
+and English replies, and saves `style-check.json` for tone review.
 
 If a configured wake-word model fails to load, the desktop uses click-to-talk
 and shows a diagnostic message instead of silently reacting to arbitrary noise.
@@ -124,7 +132,7 @@ configured. Gemini uses the `google-genai` SDK and `gemini-3.6-flash`.
    `AI_PROVIDER=gemini` and `AI_MODEL=gemini-3.6-flash`.
 2. Double-click `start_jarvis.bat`. The HUD opens and displays initialization
    progress. After running `install_desktop.ps1`, it opens at sign-in and unlock automatically.
-3. After the greeting, say **"hey Jarvis"**, wait for **"Yes, Sir?"**, then
+3. After the greeting, say **"hey Jarvis"**, wait for **"हाँ, बोलो"** or **"Yeah, I'm here"**, then
    speak your question. Press **Ctrl + Shift + J** to stop.
 
 Useful checks from the project folder:

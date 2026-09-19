@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # Startup
     startup_greeting_enabled: bool = True
     startup_greeting_delay: float = 5.0
-    startup_greeting: str = "Good morning, Sir."
+    startup_greeting: str = "Hey! I'm ready. What's up?"
 
     # Wake word
     wake_word_enabled: bool = True

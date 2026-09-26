@@ -16,13 +16,15 @@ log = logging.getLogger("jarvis.desktop")
 class AssistantWorker(QThread):
     event = Signal(str, object)
 
-    def __init__(self, factory, speech_enabled=True, parent=None, hearing_profile=None, language_mode=None):
+    def __init__(self, factory, speech_enabled=True, parent=None, hearing_profile=None,
+                 language_mode=None, screen_read_enabled=False):
         super().__init__(parent)
         self.factory = factory
         self.engine = None
         self.speech_enabled = speech_enabled
         self.hearing_profile = hearing_profile
         self.language_mode = language_mode
+        self.screen_read_enabled = bool(screen_read_enabled)
         self.stop_requested = threading.Event()
 
     def run(self):
@@ -32,6 +34,7 @@ class AssistantWorker(QThread):
             self.engine.set_speech_enabled(self.speech_enabled)
             self.engine.set_hearing_profile(self.hearing_profile or self.engine.hearing_profile)
             self.engine.set_language_mode(self.language_mode or self.engine.language_mode)
+            self.engine.set_screen_read_enabled(self.screen_read_enabled)
             if self.stop_requested.is_set():
                 return
             self.event.emit("configured", {
@@ -74,6 +77,9 @@ class AssistantWorker(QThread):
 
     def set_language_mode(self, mode):
         return self.engine is not None and self.engine.set_language_mode(mode)
+
+    def set_screen_read_enabled(self, enabled):
+        return self.engine is not None and self.engine.set_screen_read_enabled(enabled)
 
     def submit(self, text):
         return self.engine is not None and self.engine.submit_text(text)

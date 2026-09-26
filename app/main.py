@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.ai.base import AIProvider, build_provider
+from app.assistant.desktop_actions import WindowsDesktopActions
 from app.assistant.engine import AssistantEngine
 from app.audio.recorder import Player, Recorder
 from app.config import get_settings
@@ -150,6 +151,7 @@ def build_engine(settings, on_event=None, desktop=False):
             acknowledgement="Yeah, I'm here.", user_name=settings.user_name,
             context_messages=settings.context_messages, on_event=on_event,
             language_mode=settings.language_mode,
+            desktop_actions=WindowsDesktopActions() if desktop else None,
             continuous_without_wake=not desktop,
         )
     except Exception:

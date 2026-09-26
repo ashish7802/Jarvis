@@ -28,6 +28,9 @@ its motion while listening, understanding, thinking and replying.
 - **Auto language** understands Hindi, Roman Hindi/Hinglish and English and
   follows the latest question. Hindi words in replies use Devanagari so the
   Hindi voice pronounces them naturally; English technical terms stay readable.
+  Hinglish detection also recognizes mixed sentences such as "Can you batao
+  what this button does?" and keeps short neutral follow-ups in the previous
+  reply language.
   Say **"Hindi mein baat karo"**, **"speak English"**, **"Hinglish mein baat karo"**
   or **"meri language mein baat karo"**. F2 also offers a saved Language selector.
   Hindi/Hinglish mode locks recognition to Hindi; English locks it to English;
@@ -54,6 +57,16 @@ its motion while listening, understanding, thinking and replying.
   stream. Click the core or press Ctrl+Space to resume a paused microphone;
   then speak after the ready status returns. **"Clear chat"** clears both the
   visible transcript and conversation memory.
+- **Local desktop actions** can open built-in Windows tools, apps with a Start
+  Menu shortcut, and normal HTTP(S) websites after a direct voice request such
+  as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
+  model-generated shell commands, type into apps, click buttons, or submit forms.
+- **Read my screen** is off until you enable **Allow on-demand screen reading**
+  in F2 controls. When you explicitly ask, Jarvis reads accessible text from the
+  active window (not screenshots or text drawn inside images) and sends that
+  text to your configured AI provider for this response. Password fields are
+  skipped, and Jarvis does not save the captured text. Some apps expose little
+  or no accessible text, so their screen content may not be readable.
 - Closing the window stops the assistant. **Ctrl+Shift+J** also exits. Launching
   a second copy brings the existing window forward instead of opening another mic.
 - After `powershell -File .\install_desktop.ps1`, the app is installed in
@@ -62,7 +75,8 @@ its motion while listening, understanding, thinking and replying.
   and retries failed launches. No password or administrator rights are needed.
   `--headless` remains available for optional background-only use.
 
-Desktop checks: `python -m pytest -q` covers the UI with fake audio/cloud services.
+Desktop checks: `python -m pytest -q` covers the UI, explicit desktop actions,
+screen-reading opt-in, and language handling with fake audio/cloud services.
 `python -m app.main --desktop-check` opens a real desktop, verifies model loading,
 local controls, a calculation, a real AI reply and spoken playback, then exits.
 It writes `desktop-check.json` and a screenshot to the app's logs directory.

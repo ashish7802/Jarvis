@@ -15,11 +15,27 @@ from tests.test_engine import _make_engine
     ("Mujhe Python simple language mein samjhao", "hi"),
     ("ये काम कैसे करता है?", "hi"),
     ("Yaar kya haal hai", "hi"),
+    ("Yaar, mujhe is app ko easy words mein samjhao", "hi"),
+    ("Aaj weather kaisa hai?", "hi"),
+    ("Can you batao what this button does?", "hi"),
+    ("Kya this app is ready?", "hi"),
     ("Explain the main function in Python", "en"),
     ("What is Python?", "en"),
+    ("How can I start the app?", "en"),
+    ("The main feature is easy to use", "en"),
+    ("I need a simple answer", "en"),
 ])
 def test_language_hint_understands_roman_hindi_without_forcing_english(text, expected):
     assert reply_language(text) == expected
+
+
+@pytest.mark.parametrize("text", ["haan", "nahi", "theek hai", "accha"])
+def test_short_hinglish_followups_keep_hindi_replies(text):
+    assert reply_language(text, previous="hi") == "hi"
+
+
+def test_short_english_followup_keeps_english_reply():
+    assert reply_language("okay", previous="en") == "en"
 
 
 def test_auto_switches_languages_on_new_question_and_keeps_neutral_followup():

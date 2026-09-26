@@ -13,3 +13,5 @@ keyboard>=0.13.5
 openwakeword>=0.6.0
 # Inference runtime used by openWakeWord.
 onnxruntime>=1.17.0
+# Accessible-text reading for the active Windows app (loaded only on request).
+pywinauto>=0.6.9; platform_system == "Windows"

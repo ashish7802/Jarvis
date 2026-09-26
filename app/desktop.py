@@ -9,7 +9,7 @@ import sys
 from PySide6.QtCore import Qt, QSettings, QTimer, Slot, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
     QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget, QComboBox, QProgressBar,
 )
 
@@ -226,6 +226,21 @@ class JarvisWindow(QMainWindow):
         self.voice.setCheckable(True)
         self.voice.toggled.connect(self._toggle_voice)
         control_layout.addWidget(self.voice)
+        self.screen_read = QCheckBox("Allow on-demand screen reading")
+        self.screen_read.setAccessibleName("Allow on-demand screen reading")
+        self.screen_read.setChecked(self.preferences.value("screen_read_enabled", False, type=bool))
+        self.screen_read.setToolTip(
+            "When enabled, accessible text from the active window is sent to your configured AI provider "
+            "only when you ask Jarvis to read the screen. Password fields are skipped and the capture "
+            "is not saved by Jarvis."
+        )
+        self.screen_read.toggled.connect(self._change_screen_read)
+        control_layout.addWidget(self.screen_read)
+        control_layout.addWidget(label(
+            "Active-window text goes to your AI provider only after you ask. "
+            "Password fields are skipped; Jarvis doesn't save the capture.",
+            "muted", True,
+        ))
         self.clear = button("New chat")
         self.clear.clicked.connect(self._clear)
         control_layout.addWidget(self.clear)
@@ -311,7 +326,8 @@ class JarvisWindow(QMainWindow):
         self._refresh_state()
         self.worker = AssistantWorker(self.factory, self.voice.isChecked(), self,
                                       hearing_profile=self.preferences.value("hearing_profile"),
-                                      language_mode=self.preferences.value("language_mode"))
+                                      language_mode=self.preferences.value("language_mode"),
+                                      screen_read_enabled=self.preferences.value("screen_read_enabled", False, type=bool))
         self.worker.event.connect(self.on_event)
         self.worker.finished.connect(self._worker_finished)
         self.worker.start()
@@ -354,6 +370,11 @@ class JarvisWindow(QMainWindow):
             self.language.setCurrentIndex(self.language.findData(payload))
             self.language.blockSignals(False)
             self.preferences.setValue("language_mode", payload)
+        elif event == "screen_read":
+            self.screen_read.blockSignals(True)
+            self.screen_read.setChecked(bool(payload))
+            self.screen_read.blockSignals(False)
+            self.preferences.setValue("screen_read_enabled", bool(payload))
         elif event == "hearing":
             self.hearing.blockSignals(True)
             self.hearing.setCurrentIndex(self.hearing.findData(payload))
@@ -423,6 +444,7 @@ class JarvisWindow(QMainWindow):
         self.input.setEnabled(not self.closing and not self.failed)
         self.hearing.setEnabled(ready)
         self.language.setEnabled(ready)
+        self.screen_read.setEnabled(ready)
         self.cancel_button.setEnabled(self.current_state in ("WAKE_DETECTED", "ACKNOWLEDGING", "LISTENING", "TRANSCRIBING", "THINKING", "SPEAKING") and not self.closing and not self.cancelling)
         self.send.setEnabled(ready)
         self.clear.setEnabled(ready)
@@ -464,6 +486,12 @@ class JarvisWindow(QMainWindow):
     def _change_language(self):
         if self.worker is not None and not self.worker.set_language_mode(self.language.currentData()):
             self.on_event("language", self.worker.engine.language_mode)
+
+    def _change_screen_read(self, enabled):
+        self.preferences.setValue("screen_read_enabled", bool(enabled))
+        if self.worker is not None and not self.worker.set_screen_read_enabled(enabled):
+            engine = self.worker.engine
+            self.on_event("screen_read", bool(engine and engine.screen_read_enabled))
 
     def _toggle_pause(self):
         if self.worker is not None and self.worker.pause(not self.paused):

@@ -3,6 +3,17 @@ import re
 
 LANGUAGES = {"auto": "Auto · Hindi / English", "hi": "Hindi", "hinglish": "Hinglish", "en": "English"}
 _HINDI_WORDS = set("mujhe mujko mera meri mere tum tumhara aap aapka kaise kaisa kaisi kya kyun kyu batao samjhao samjha dikhao karo karna chahiye caheya chaiye nahi nahin haan han hain hai ho raha rahi mai mein namaste yaar abhi wala wali baat bolo boliye suno".split())
+_HINDI_MARKERS = set(
+    "mujhe mujko mera meri mere hum humein hume tum tumhe tumhara tumhari "
+    "aap aapko aapka aapki kaise kaisa kaisi kya kyun kyu kyunki kyuki "
+    "bata batao samjhao samjha samajh dikhao karo karna karlo "
+    "chahiye chaiye nahi nahin nhi haan han hain hai ho hua hui hu "
+    "raha rahi rahe gaya gayi gaye kholo khol kholna chalao "
+    "accha acha achha theek sahi yaar bhai mujhe apna apni iska iski "
+    "uska uski isko usko aaj kal abhi thoda zyada kam kaam baat "
+    "bol bolo bolna suno dekho dikhana padhna padho likho"
+    .split()
+)
 
 
 def reply_language(text, mode="auto", previous="en"):
@@ -13,9 +24,12 @@ def reply_language(text, mode="auto", previous="en"):
     if re.search(r"[\u0900-\u097f]", text):
         return "hi"
     words = set(re.findall(r"[a-z]+", text.casefold()))
-    if len(words & _HINDI_WORDS) >= 2 or words & {"namaste", "samjhao", "batao", "dikhao"}:
+    if words & _HINDI_MARKERS or len(words & _HINDI_WORDS) >= 2:
         return "hi"
-    if len(words) <= 2 and words <= {"yes", "no", "ok", "okay", "sure", "continue", "thanks", "hmm"}:
+    if len(words) <= 2 and words <= {
+        "yes", "no", "ok", "okay", "sure", "continue", "thanks", "thank", "you",
+        "hmm", "right", "got", "it",
+    }:
         return previous
     return "en"
 
@@ -75,6 +89,16 @@ _HINDI = {
     "I had trouble hearing that. Please try again.": "आवाज़ clear नहीं आई। एक बार फिर बोलना।",
     "Something went wrong while I was thinking. Please try again.": "जवाब बनाते वक्त कुछ गड़बड़ हो गई। एक बार फिर try करो।",
     "That calculation is undefined; you can't divide by zero.": "Zero से divide नहीं कर सकते, इसका result defined नहीं है।",
+    "Screen reading is off. Turn it on in F2 controls first.": "Screen पढ़ना अभी off है। पहले F2 controls में इसे on कर लो।",
+    "I couldn't read any text from the active window. Open the app and try again.": "Active window में पढ़ने लायक text नहीं मिला। App खोलकर फिर try करो।",
+    "I couldn't read the active window. Make sure the app is open and visible.": "Active window पढ़ नहीं पाई। Check करो कि app खुली और visible है।",
+    "Screen reading is available in the Windows desktop app only.": "Screen पढ़ने की सुविधा सिर्फ Windows desktop app में है।",
+    "Local desktop actions are available in the Windows desktop app only.": "ये desktop actions सिर्फ Windows desktop app में काम करते हैं।",
+    "Screen reading needs the optional Windows accessibility component. Reinstall Jarvis with the current requirements.": "Screen पढ़ने के लिए Windows accessibility component चाहिए। Current requirements के साथ Jarvis reinstall करो।",
+    "Use a normal website address, like example.com.": "Normal website address दो, जैसे example.com।",
+    "I couldn't open your browser.": "Browser नहीं खुल पाया।",
+    "I couldn't open that website in your browser.": "Website browser में नहीं खुल पाई।",
+    "I couldn't complete that desktop action. Check that the app or browser is available.": "वो desktop action पूरा नहीं हुआ। Check करो कि app या browser available है।",
 }
 
 
@@ -87,4 +111,17 @@ def localize(text, language):
         return "अभी " + text.removeprefix("It's ").rstrip(".") + " बजे हैं।"
     if text.startswith("Today is "):
         return "आज " + text.removeprefix("Today is ").rstrip(".") + " है।"
+    if text.startswith("Opening ") and text.endswith(" in your browser."):
+        target = text.removeprefix("Opening ").removesuffix(" in your browser.")
+        return f"Browser में {target} खोल रही हूँ।"
+    if text == "Opening your browser.":
+        return "Browser खोल रही हूँ।"
+    if text.startswith("Opening "):
+        return "खोल रही हूँ: " + text.removeprefix("Opening ").rstrip(".") + "।"
+    if text.startswith("I couldn't find an installed app named "):
+        target = text.removeprefix("I couldn't find an installed app named ").removesuffix(" in the Windows Start menu.")
+        return f"Windows Start menu में {target} नाम की app नहीं मिली। उसका exact नाम try करो।"
+    if text.startswith("I couldn't open ") and text.endswith(". Check that it is available."):
+        target = text.removeprefix("I couldn't open ").removesuffix(". Check that it is available.")
+        return f"{target} नहीं खुल पाई। एक बार check करो कि वो available है।"
     return _HINDI.get(text, text)

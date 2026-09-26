@@ -40,6 +40,15 @@ def _default_tts_cache_dir() -> Path:
     return d
 
 
+def _default_data_dir() -> Path:
+    if _is_frozen():
+        d = _user_data_dir() / "data"
+    else:
+        d = PROJECT_ROOT / "data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _resolve_env_file() -> str | None:
     """Return the path to the .env file to load, honouring
     JARVIS_ENV_FILE for tests / packaging, defaulting to the project
@@ -119,6 +128,7 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     logs_dir: Path = Field(default_factory=_default_logs_dir)
     tts_cache_dir: Path = Field(default_factory=_default_tts_cache_dir)
+    data_dir: Path = Field(default_factory=_default_data_dir)
 
     @field_validator("startup_greeting_delay")
     @classmethod
@@ -144,6 +154,7 @@ def _build() -> Settings:
     inst = Settings(_env_file=path)
     inst.logs_dir.mkdir(parents=True, exist_ok=True)
     inst.tts_cache_dir.mkdir(parents=True, exist_ok=True)
+    inst.data_dir.mkdir(parents=True, exist_ok=True)
     return inst
 
 

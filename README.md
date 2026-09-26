@@ -61,6 +61,13 @@ its motion while listening, understanding, thinking and replying.
   Menu shortcut, and normal HTTP(S) websites after a direct voice request such
   as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
   model-generated shell commands, type into apps, click buttons, or submit forms.
+- **Local productivity skills** work without an AI request: "set a timer for 10
+  minutes to stretch", "remind me tomorrow at 9 am to call mom", "take a note:
+  buy oat milk", "show reminders", and "show notes". Reminders and notes are
+  stored locally in the app data directory, survive restarts, and can be
+  cancelled with "cancel reminder <id or text>", or deleted with "delete note
+  <title>". The AI never receives this
+  private local store unless you choose to mention its contents in a question.
 - **Read my screen** is off until you enable **Allow on-demand screen reading**
   in F2 controls. When you explicitly ask, Jarvis reads accessible text from the
   active window (not screenshots or text drawn inside images) and sends that
@@ -266,6 +273,7 @@ Key values:
 | `STARTUP_GREETING_DELAY` | `5` | Seconds to wait before greeting |
 | `HOTKEY_EXIT` | `Ctrl+Shift+J` | Emergency-stop hotkey |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `DATA_DIR` | project `data/` | Local reminders and notes storage |
 
 ---
 

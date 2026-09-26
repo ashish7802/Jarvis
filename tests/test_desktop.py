@@ -176,6 +176,19 @@ def test_language_preference_and_voice_switch_update_ui(qt_app, window):
     assert window.worker.engine.stt.language is None
 
 
+def test_screen_reading_requires_opt_in_and_persists(qt_app, window):
+    assert not window.screen_read.isChecked()
+    assert not window.worker.engine.screen_read_enabled
+
+    window.screen_read.setChecked(True)
+    wait_until(qt_app, lambda: window.worker.engine.screen_read_enabled)
+    assert window.preferences.value("screen_read_enabled", False, type=bool)
+
+    window.screen_read.setChecked(False)
+    wait_until(qt_app, lambda: not window.worker.engine.screen_read_enabled)
+    assert not window.preferences.value("screen_read_enabled", True, type=bool)
+
+
 def test_mic_level_connection_and_pause_status(qt_app, window):
     window.on_event("microphone", False)
     assert "disconnected" in window.badge.text().lower()

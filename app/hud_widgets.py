@@ -7,8 +7,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QSizePolicy
 
 ACCENT = "#007aff"
 STYLE = """
-QMainWindow { background: #f5f5f7; }
-QWidget { color: #1d1d1f; font-family: 'Segoe UI Variable', 'Segoe UI'; font-size: 13px; }
+QMainWindow, QWidget { background: transparent; color: #f5f8ff; font-family: 'Segoe UI Variable', 'Segoe UI'; font-size: 13px; }
 QLabel { background: transparent; border: none; }
 QLabel#brand { color: #1d1d1f; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
 QLabel#muted { color: #86868b; font-size: 12px; }
@@ -93,13 +92,16 @@ class VoiceOrb(QWidget):
         self.setMinimumSize(100, 100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName("Activate Jarvis microphone")
-        self.setToolTip("Click to speak; click again or press Escape to cancel. F2 shows controls.")
+        self.setToolTip("Click to speak; click again or press Escape to cancel. Right-click for options.")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.phase = 0.0
         self.mode = "STARTING"
         self.audio_level = 0.0
         self.display_level = 0.0
+        self._drag_origin = None
+        self._window_origin = None
+        self._dragging = False
         self.timer = QTimer(self)
         self.timer.setInterval(33)
         self.timer.timeout.connect(self._tick)
@@ -112,9 +114,32 @@ class VoiceOrb(QWidget):
             self.display_level += (target - self.display_level) * .3
             self.update()
 
-    def mouseReleaseEvent(self, event):
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_origin = event.globalPosition().toPoint()
+            self._window_origin = self.window().pos()
+            self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            self._drag_origin is not None
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            current = event.globalPosition().toPoint()
+            delta = current - self._drag_origin
+            if delta.manhattanLength() > 5:
+                self._dragging = True
+                self.window().move(self._window_origin + delta)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and not self._dragging:
             self.activated.emit()
+        self._drag_origin = None
+        self._window_origin = None
+        self._dragging = False
+        super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Space):

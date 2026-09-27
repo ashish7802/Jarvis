@@ -30,7 +30,7 @@ def test_read_screen_requires_an_explicit_opt_in():
 
     assert actions.read_count == 0
     assert not engine.ai.calls
-    assert "F2 controls" in engine.context.last_assistant()
+    assert "right-click menu" in engine.context.last_assistant()
 
 
 def test_screen_text_is_temporary_and_marked_as_untrusted():

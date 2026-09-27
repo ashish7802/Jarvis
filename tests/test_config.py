@@ -12,8 +12,8 @@ def test_default_settings():
     assert s.jarvis_name == "Jarvis"
     assert s.ai_provider == "mock"
     assert s.wake_word == "jarvis"
-    assert s.listen_timeout == 10.0
-    assert s.silence_timeout == 1.5
+    assert s.listen_timeout == 15.0
+    assert s.silence_timeout == 1.8
     assert s.tts_voice == "en-US-GuyNeural"
     assert s.hotkey_exit == "Ctrl+Shift+J"
 

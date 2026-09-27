@@ -8,19 +8,19 @@ JARVIS now opens as a native Qt desktop app with a cyan, animated reactor and
 a minimal HUD. There is no browser, local website, or web view. The core changes
 its motion while listening, understanding, thinking and replying.
 
-- Say **"hey Jarvis"**, wait for the acknowledgement, then ask your question.
-  You can also click the core or press **Ctrl+Space** inside the app.
+- Click the small orb or press **Ctrl+Space** and speak naturally. Jarvis starts
+  recording immediately instead of speaking an acknowledgement over your first
+  words. You can also say **"hey Jarvis"** when the local wake word is enabled.
 - **Soft voice** mode is the default: a noise-relative recording threshold,
   450 ms onset buffer and capped amplification help capture quieter questions.
-  Open controls with **F2** to choose **Balanced** or **Noisy room**; the choice
-  is saved across restarts. Exact commands **"soft voice mode"**, **"balanced
-  mode"** and **"noisy room mode"** change it without a cloud AI request.
+  Exact commands **"soft voice mode"**, **"balanced mode"** and **"noisy room
+  mode"** change it without a cloud AI request.
 - The core reacts to measured microphone volume while recording. The hidden
   controls include a live input meter and clipping/connection feedback. Wake
   microphone disconnects are retried automatically. Soft mode works best in
   a quiet room; it cannot recover speech drowned out by noise or guarantee
   whisper/far-field recognition. Use Noisy room near a fan or traffic.
-- **Escape** or a second core click cancels the current turn. Recording and
+- **Escape** or a second orb click cancels the current turn. Recording and
   playback stop promptly; an in-flight transcription or cloud request must
   finish before the next question, and its late answer is discarded. You can
   keep typing a draft while Jarvis is busy. Short spoken replies are synthesized
@@ -32,7 +32,7 @@ its motion while listening, understanding, thinking and replying.
   what this button does?" and keeps short neutral follow-ups in the previous
   reply language.
   Say **"Hindi mein baat karo"**, **"speak English"**, **"Hinglish mein baat karo"**
-  or **"meri language mein baat karo"**. F2 also offers a saved Language selector.
+  or **"meri language mein baat karo"**. The choice is saved across restarts.
   Hindi/Hinglish mode locks recognition to Hindi; English locks it to English;
   Auto restores language detection. Speech is transcribed, not translated.
   For better Hindi recognition on a CPU, `STT_MODEL=small` with
@@ -45,18 +45,12 @@ its motion while listening, understanding, thinking and replying.
   Short small talk stays short; follow-ups and light humor are used when helpful,
   without repeating "Sir" or "yaar" in every answer. You can explicitly request
   formal or pure Hindi. The assistant remains honest about being an AI.
-- Conversation appears when you speak, with a type-on answer animation. It
-  hides after 45 seconds of inactivity. **"Show chat"** keeps it visible;
-  **"hide chat"** hides it. Hidden chat still remains in this session's memory.
-- Controls stay hidden by default. Say **"show controls"**, **"controls dikhao"**,
-  or **"settings dikhao"** to reveal them. **"Hide controls"** closes them.
-  **F2** is the keyboard fallback. Hindi equivalents such as **"सेटिंग्स दिखाओ"**
-  and **"चैट दिखाओ"** work after speech recognition.
-- The controls panel contains microphone pause/resume, spoken replies on/off,
-  typed messages, new chat and diagnostic logs. Pausing closes the wake microphone
-  stream. Click the core or press Ctrl+Space to resume a paused microphone;
-  then speak after the ready status returns. **"Clear chat"** clears both the
-  visible transcript and conversation memory.
+- The desktop surface is intentionally voice-only: there is no chat window,
+  settings panel, or text box. Drag the orb to move it; right-click it for
+  pause/resume, voice replies, diagnostic logs, and quit.
+- If Jarvis cannot understand a sentence, it asks you to say it another way.
+  Its conversation prompt follows context, understands Hindi/Hinglish/English,
+  and asks one focused clarification instead of guessing when needed.
 - **Local desktop actions** can open built-in Windows tools, apps with a Start
   Menu shortcut, and normal HTTP(S) websites after a direct voice request such
   as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
@@ -68,8 +62,8 @@ its motion while listening, understanding, thinking and replying.
   cancelled with "cancel reminder <id or text>", or deleted with "delete note
   <title>". The AI never receives this
   private local store unless you choose to mention its contents in a question.
-- **Read my screen** is off until you enable **Allow on-demand screen reading**
-  in F2 controls. When you explicitly ask, Jarvis reads accessible text from the
+- **Read my screen** remains opt-in. When enabled and explicitly asked, Jarvis
+  reads accessible text from the
   active window (not screenshots or text drawn inside images) and sends that
   text to your configured AI provider for this response. Password fields are
   skipped, and Jarvis does not save the captured text. Some apps expose little

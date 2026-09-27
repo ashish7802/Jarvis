@@ -328,11 +328,14 @@ class AssistantEngine:
                 self.set_state(State.THINKING)
                 self._answer(text)
                 return
-            self.set_state(State.ACKNOWLEDGING)
-            self.set_state(State.SPEAKING)
-            self._speak(self.acknowledgement, display=False)
-            if self._turn_cancelled.wait(self.cooldown_seconds):
-                return
+            # Do not speak an acknowledgement before recording. That used to
+            # make Jarvis talk over the first words of a natural reply.
+            if self.acknowledgement:
+                self.set_state(State.ACKNOWLEDGING)
+                self.set_state(State.SPEAKING)
+                self._speak(self.acknowledgement, display=False)
+                if self._turn_cancelled.wait(self.cooldown_seconds):
+                    return
             self.set_state(State.LISTENING)
             self.handle_command()
         except Exception:
@@ -352,15 +355,15 @@ class AssistantEngine:
             if audio is None or audio.size == 0:
                 if getattr(self.recorder, "last_error", False):
                     self._listening_feedback("I couldn't access the microphone. Please check its connection.")
-                elif self.wake is not None:
-                    self._listening_feedback("I didn't hear a question. Say hey Jarvis when you're ready.")
+                else:
+                    self._listening_feedback("I didn't hear anything. Try saying that again when you're ready.")
                 return
             self.set_state(State.TRANSCRIBING)
             text = self.stt.transcribe(audio).strip()
             if self._interrupted():
                 return
             if not text:
-                self._listening_feedback("I couldn't understand that. Please say hey Jarvis and try again.")
+                self._listening_feedback("I didn't catch that. Could you say it another way?")
                 return
             self.set_state(State.THINKING)
             self._answer(text)
@@ -407,7 +410,7 @@ class AssistantEngine:
         if desktop_request is not None:
             if desktop_request.action == "read_screen":
                 if not self.screen_read_enabled:
-                    reply = localize("Screen reading is off. Turn it on in F2 controls first.", self._reply_language)
+                    reply = localize("Screen reading is off. Enable it from the orb's right-click menu first.", self._reply_language)
                     self.set_state(State.SPEAKING)
                     self._speak(reply)
                     self._turn_cancelled.wait(self.cooldown_seconds)

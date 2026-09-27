@@ -98,11 +98,11 @@ class Settings(BaseSettings):
     porcupine_sensitivity: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # Listening
-    listen_timeout: float = 10.0
-    silence_timeout: float = 1.5
+    listen_timeout: float = 15.0
+    silence_timeout: float = 1.8
     hearing_profile: Literal["soft", "balanced", "noisy"] = "soft"
     language_mode: Literal["auto", "hi", "hinglish", "en"] = "auto"
-    stt_model: str = "base"
+    stt_model: str = "small"
     stt_language: str = "auto"
     stt_beam_size: int = Field(default=3, ge=1, le=5)
     user_name: str = ""

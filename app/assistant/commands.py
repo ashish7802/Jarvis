@@ -47,10 +47,10 @@ _DESKTOP_REPLIES = {
     "hearing_soft": "Soft voice mode is on. I'm more sensitive to quiet speech.",
     "hearing_balanced": "Balanced hearing is on.",
     "hearing_noisy": "Noisy room mode is on. Speak a little closer to the microphone.",
-    "show_controls": "Here are your controls.",
-    "hide_controls": "Controls hidden.",
-    "show_chat": "Here's our conversation.",
-    "hide_chat": "Conversation hidden.",
+    "show_controls": "Right-click the Jarvis orb for the few options I have.",
+    "hide_controls": "The orb is already your only interface.",
+    "show_chat": "I keep our conversation in memory, but this mode is voice-only.",
+    "hide_chat": "Okay, I’ll keep the conversation voice-only.",
     "clear_chat": "I've cleared our conversation.",
 }
 

@@ -50,8 +50,17 @@ def _configure() -> None:
 
 
 def _build_ai(settings) -> AIProvider:
+    provider = settings.ai_provider
+    # If a key is configured but AI_PROVIDER was left at the offline default,
+    # prefer the real model automatically. This makes a fresh setup smart
+    # without breaking the no-key offline fallback.
+    if provider == "mock":
+        if settings.gemini_api_key:
+            provider = "gemini"
+        elif settings.openai_api_key:
+            provider = "openai"
     return build_provider(
-        settings.ai_provider,
+        provider,
         openai_key=settings.openai_api_key,
         gemini_key=settings.gemini_api_key,
         model=settings.ai_model,
@@ -147,9 +156,11 @@ def build_engine(settings, on_event=None, desktop=False):
                 on_event("notice", "Wake-word detection couldn't load. Click the core or press Ctrl+Space to speak. Open controls for diagnostic logs.")
         return AssistantEngine(
             ai=ai, stt=stt, tts=tts, wake=wake, recorder=recorder, player=player,
-            startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled else None,
+            # The orb should become quietly ready. A spoken greeting before
+            # the first turn feels like an unrelated interruption.
+            startup_greeting=settings.startup_greeting if settings.startup_greeting_enabled and not desktop else None,
             startup_greeting_delay=0 if desktop else settings.startup_greeting_delay,
-            acknowledgement="Yeah, I'm here.", user_name=settings.user_name,
+            acknowledgement="", user_name=settings.user_name,
             context_messages=settings.context_messages, on_event=on_event,
             language_mode=settings.language_mode,
             desktop_actions=WindowsDesktopActions() if desktop else None,

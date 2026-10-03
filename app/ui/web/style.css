@@ -1,0 +1,486 @@
+/* Apple Siri UI Stylesheet for JARVIS */
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --bg-dark: rgba(10, 10, 18, 0.85);
+    --glass-bg: rgba(255, 255, 255, 0.07);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    --text-primary: #FFFFFF;
+    --text-secondary: rgba(255, 255, 255, 0.65);
+    --text-tertiary: rgba(255, 255, 255, 0.45);
+    --siri-cyan: #00F2FE;
+    --siri-magenta: #FF007F;
+    --siri-purple: #7F00FF;
+    --siri-blue: #4FACFE;
+    --siri-gradient: linear-gradient(135deg, #00F2FE 0%, #4FACFE 30%, #7F00FF 70%, #FF007F 100%);
+    --siri-glow: 0 0 40px rgba(0, 242, 254, 0.5), 0 0 80px rgba(127, 0, 255, 0.3);
+    --font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+body {
+    font-family: var(--font-family);
+    background: #000000;
+    color: var(--text-primary);
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(127, 0, 255, 0.25) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(255, 0, 127, 0.2) 0px, transparent 50%),
+        radial-gradient(at 50% 50%, rgba(0, 242, 254, 0.15) 0px, transparent 60%);
+    background-size: 150% 150%;
+    animation: bgGradientMove 15s ease infinite alternate;
+}
+
+@keyframes bgGradientMove {
+    0% { background-position: 0% 0%; }
+    50% { background-position: 100% 100%; }
+    100% { background-position: 50% 0%; }
+}
+
+/* iOS 18 Siri Edge Glow Frame */
+.siri-edge-glow {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 1000;
+    border-radius: 0px;
+    box-shadow: inset 0 0 60px rgba(0, 242, 254, 0), inset 0 0 100px rgba(255, 0, 127, 0);
+    transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 0;
+}
+
+.siri-edge-glow.active-listening {
+    opacity: 1;
+    box-shadow: 
+        inset 0 0 40px rgba(0, 242, 254, 0.8),
+        inset 0 0 80px rgba(127, 0, 255, 0.6),
+        inset 0 0 120px rgba(255, 0, 127, 0.5);
+    animation: edgePulse 2s ease-in-out infinite alternate;
+}
+
+@keyframes edgePulse {
+    0% {
+        box-shadow: 
+            inset 0 0 30px rgba(0, 242, 254, 0.7),
+            inset 0 0 70px rgba(127, 0, 255, 0.5),
+            inset 0 0 100px rgba(255, 0, 127, 0.4);
+    }
+    100% {
+        box-shadow: 
+            inset 0 0 60px rgba(0, 242, 254, 0.95),
+            inset 0 0 110px rgba(127, 0, 255, 0.8),
+            inset 0 0 150px rgba(255, 0, 127, 0.7);
+    }
+}
+
+/* Glassmorphism Window Container */
+.siri-container {
+    width: 100vw;
+    height: 100vh;
+    max-width: 900px;
+    max-height: 700px;
+    background: var(--bg-dark);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 28px;
+    box-shadow: var(--glass-shadow), 0 0 80px rgba(127, 0, 255, 0.15);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Window Title Bar */
+.window-header {
+    height: 48px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.02);
+    -webkit-app-region: drag; /* Window draggable area */
+}
+
+.window-controls {
+    display: flex;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+}
+
+.control {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.control:hover {
+    transform: scale(1.15);
+}
+
+.close-btn { background: #FF5F56; border: 1px solid #E0443E; }
+.minimize-btn { background: #FFBD2E; border: 1px solid #DEA123; }
+.maximize-btn { background: #27C93F; border: 1px solid #1AAB29; }
+
+.window-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.siri-sparkle {
+    background: var(--siri-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.window-status {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #27C93F;
+    box-shadow: 0 0 8px #27C93F;
+}
+
+/* Transcript / Conversation Stream */
+.transcript-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    scroll-behavior: smooth;
+}
+
+.transcript-area::-webkit-scrollbar {
+    width: 6px;
+}
+.transcript-area::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+}
+
+/* Siri Greeting */
+.siri-greeting {
+    text-align: center;
+    margin: 20px 0;
+    animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.siri-icon-badge {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px auto;
+    border-radius: 50%;
+    background: var(--siri-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    color: #fff;
+    box-shadow: var(--siri-glow);
+}
+
+.siri-greeting h2 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    background: linear-gradient(180deg, #FFFFFF 0%, rgba(255, 255, 255, 0.8) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.greeting-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+
+/* Suggestion Chips */
+.suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    max-width: 650px;
+    margin: 0 auto;
+}
+
+.chip {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 10px 18px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font-family);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    backdrop-filter: blur(10px);
+}
+
+.chip:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(0, 242, 254, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 242, 254, 0.2);
+}
+
+.chip i {
+    color: var(--siri-cyan);
+}
+
+/* Chat Messages */
+.messages-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.msg-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 80%;
+    animation: msgSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes msgSlideIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-wrapper.user {
+    align-self: flex-end;
+}
+
+.msg-wrapper.siri {
+    align-self: flex-start;
+}
+
+.msg-bubble {
+    padding: 14px 20px;
+    border-radius: 22px;
+    font-size: 15px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.user .msg-bubble {
+    background: var(--siri-gradient);
+    color: #FFFFFF;
+    border-bottom-right-radius: 6px;
+    box-shadow: 0 4px 15px rgba(127, 0, 255, 0.3);
+}
+
+.siri .msg-bubble {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(20px);
+    color: #FFFFFF;
+    border-bottom-left-radius: 6px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.msg-author {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    padding: 0 8px;
+}
+
+/* Center Siri Orb & Visualizer */
+.siri-center-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0;
+    position: relative;
+}
+
+.orb-wrapper {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.orb-wrapper:hover {
+    transform: scale(1.06);
+}
+
+#siriOrbCanvas {
+    width: 180px;
+    height: 180px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.orb-center-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--text-primary);
+    z-index: 10;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.orb-wrapper.listening .orb-center-icon {
+    background: rgba(255, 0, 127, 0.3);
+    border-color: var(--siri-magenta);
+    color: #FFF;
+    box-shadow: 0 0 20px var(--siri-magenta);
+}
+
+.orb-wrapper.speaking .orb-center-icon {
+    background: rgba(0, 242, 254, 0.3);
+    border-color: var(--siri-cyan);
+    color: #FFF;
+    box-shadow: 0 0 20px var(--siri-cyan);
+}
+
+.siri-status-text {
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
+    transition: color 0.3s ease;
+}
+
+/* Glassmorphic Input Bar */
+.siri-input-section {
+    padding: 16px 24px 24px 24px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.glass-input-wrapper {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 30px;
+    padding: 6px 10px 6px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    backdrop-filter: blur(25px);
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.glass-input-wrapper:focus-within {
+    border-color: rgba(0, 242, 254, 0.6);
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.25), 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+#userInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #FFFFFF;
+    font-family: var(--font-family);
+    font-size: 15px;
+}
+
+#userInput::placeholder {
+    color: var(--text-tertiary);
+}
+
+.action-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.25s ease;
+}
+
+.action-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #FFFFFF;
+}
+
+.send-btn {
+    background: var(--siri-gradient);
+    color: #FFFFFF;
+    box-shadow: 0 4px 15px rgba(0, 242, 254, 0.3);
+}
+
+.send-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 20px rgba(127, 0, 255, 0.5);
+}
+
+.mic-btn.active {
+    color: var(--siri-magenta);
+    animation: micPulse 1.2s infinite alternate;
+}
+
+@keyframes micPulse {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(1.15); opacity: 1; }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}

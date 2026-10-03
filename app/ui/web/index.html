@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS - Apple Siri Interface</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="qwebchannel.js"></script>
+</head>
+<body>
+    <!-- iOS 18 Siri Screen-Edge Glow Effect -->
+    <div class="siri-edge-glow" id="siriEdgeGlow"></div>
+
+    <!-- Main Siri Glass Container -->
+    <div class="siri-container">
+        <!-- Title Bar / Window Controls -->
+        <div class="window-header">
+            <div class="window-controls">
+                <span class="control close-btn" onclick="window.pyBridge ? window.pyBridge.closeApp() : window.close()"></span>
+                <span class="control minimize-btn" onclick="window.pyBridge ? window.pyBridge.minimizeApp() : null"></span>
+                <span class="control maximize-btn" onclick="window.pyBridge ? window.pyBridge.maximizeApp() : null"></span>
+            </div>
+            <div class="window-title">
+                <i class="fa-solid fa-sparkles siri-sparkle"></i> JARVIS Siri AI
+            </div>
+            <div class="window-status" id="connectionStatus">
+                <span class="status-dot"></span> Ready
+            </div>
+        </div>
+
+        <!-- Scrollable Conversation Transcript Area -->
+        <div class="transcript-area" id="transcriptArea">
+            <!-- Welcome Siri Greeting -->
+            <div class="siri-greeting" id="siriGreeting">
+                <div class="siri-icon-badge">
+                    <i class="fa-brands fa-apple"></i>
+                </div>
+                <h2>What can I help you with?</h2>
+                <p class="greeting-subtitle">Ask JARVIS anything or tap the mic to speak</p>
+                
+                <!-- Apple Siri Suggestion Chips -->
+                <div class="suggestion-chips">
+                    <button class="chip" onclick="sendQuickPrompt('What is the current date and time?')">
+                        <i class="fa-regular fa-clock"></i> What's the time?
+                    </button>
+                    <button class="chip" onclick="sendQuickPrompt('Check my system resources and CPU usage')">
+                        <i class="fa-solid fa-microchip"></i> System Health
+                    </button>
+                    <button class="chip" onclick="sendQuickPrompt('Tell me a creative joke')">
+                        <i class="fa-solid fa-face-laugh-beam"></i> Tell me a joke
+                    </button>
+                    <button class="chip" onclick="sendQuickPrompt('Who is JARVIS?')">
+                        <i class="fa-solid fa-user-ninja"></i> Who is JARVIS?
+                    </button>
+                    <button class="chip" onclick="sendQuickPrompt('Open Google Chrome')">
+                        <i class="fa-brands fa-chrome"></i> Open App
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages Stream -->
+            <div class="messages-container" id="messagesContainer"></div>
+        </div>
+
+        <!-- Siri Center Interactive Orb & Waveform Display -->
+        <div class="siri-center-stage">
+            <!-- Canvas for Siri Glowing Liquid Wave Orb -->
+            <div class="orb-wrapper" id="orbWrapper" onclick="toggleVoiceListening()">
+                <canvas id="siriOrbCanvas" width="400" height="400"></canvas>
+                <div class="orb-center-icon">
+                    <i class="fa-solid fa-microphone" id="orbMicIcon"></i>
+                </div>
+                <div class="listening-pulse-ring"></div>
+            </div>
+            
+            <!-- Voice Status Label -->
+            <div class="siri-status-text" id="siriStatusText">Tap to talk to Siri</div>
+        </div>
+
+        <!-- Input Bar with Glassmorphism -->
+        <div class="siri-input-section">
+            <form id="promptForm" onsubmit="handleFormSubmit(event)">
+                <div class="glass-input-wrapper">
+                    <button type="button" class="action-btn mic-btn" id="micBtn" onclick="toggleVoiceListening()" title="Voice Input">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    
+                    <input type="text" id="userInput" placeholder="Ask Siri / JARVIS..." autocomplete="off" />
+                    
+                    <button type="button" class="action-btn sound-toggle-btn" id="soundToggleBtn" onclick="toggleSound()" title="Toggle Voice Response">
+                        <i class="fa-solid fa-volume-high" id="soundIcon"></i>
+                    </button>
+
+                    <button type="submit" class="action-btn send-btn" id="sendBtn" title="Send Query">
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Audio Element for Sound FX -->
+    <audio id="siriChimeSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+
+    <script src="siri_orb.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

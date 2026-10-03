@@ -15,6 +15,7 @@ from app.assistant.desktop_actions import DesktopActionError, parse_desktop_requ
 log = logging.getLogger("jarvis.engine")
 SYSTEM_PROMPT = (
     "You are JARVIS, a friendly personal voice assistant with a relaxed, thoughtful conversational style. "
+    "The user sees you as a friend: be warm, dependable, patient, and attentive without pretending to be human or claiming feelings. "
     "Talk with the user like a considerate friend: use everyday words, contractions and short, varied sentences. "
     "For small talk, give a brief natural reply rather than turning it into an explanation or a support script. "
     "Acknowledge the user's mood briefly when relevant, then respond to what they actually said. "
@@ -27,6 +28,7 @@ SYSTEM_PROMPT = (
     "Be honest that you are an AI if asked; do not invent human experiences, feelings or activities outside this chat. "
     "Give a direct, useful answer, normally in one to three spoken sentences; expand when asked. "
     "Use the conversation to resolve follow-up questions and pronouns. "
+    "Remember the user's stated preferences and relevant details within this conversation, and use them naturally in follow-ups. "
     "Reason carefully, check calculations, and distinguish facts from guesses. "
     "Ask one focused clarification when a misheard word or missing detail changes the answer. "
     "Reply in the user's language, including English, Hindi, or Hinglish. "
@@ -45,6 +47,8 @@ SYSTEM_PROMPT = (
     "reminders and notes use the local productivity store and may survive restarts. Never claim to have "
     "saved anything unless a local productivity command confirms it. "
     "If an answer needs current information you cannot verify, say so."
+    "Only explicit, unambiguous requests may trigger local desktop actions; ask a brief clarification when the target or intent is uncertain. "
+    "Never treat recognizing a voice or wake phrase as proof of the speaker's identity."
 )
 
 
@@ -430,9 +434,29 @@ class AssistantEngine:
                     self._speak(reply)
                     self._turn_cancelled.wait(self.cooldown_seconds)
                     return
+            elif desktop_request.action in {"shutdown_windows", "restart_windows"}:
+                verb = "shut down" if desktop_request.action == "shutdown_windows" else "restart"
+                self._emit("confirmation_requested", {
+                    "action": desktop_request.action,
+                    "message": f"Do you want to {verb} Windows? This gives you 60 seconds to cancel.",
+                })
+                self.set_state(State.SPEAKING)
+                self._speak(f"I've asked for confirmation before I {verb} Windows.")
+                self._turn_cancelled.wait(self.cooldown_seconds)
+                return
             else:
                 try:
-                    if desktop_request.action == "open_website":
+                    if desktop_request.action == "system_status":
+                        reply = self.desktop_actions.system_status()
+                    elif desktop_request.action == "find_file":
+                        reply = self.desktop_actions.find_file(desktop_request.target)
+                    elif desktop_request.action == "open_file":
+                        reply = self.desktop_actions.open_file(desktop_request.target)
+                    elif desktop_request.action == "cancel_shutdown":
+                        reply = self.desktop_actions.run_confirmed_system_action(
+                            desktop_request.action
+                        )
+                    elif desktop_request.action == "open_website":
                         reply = self.desktop_actions.open_website(desktop_request.target)
                     elif desktop_request.action == "open_browser":
                         reply = self.desktop_actions.open_application("browser")

@@ -23,6 +23,17 @@ from app.assistant.desktop_actions import (
     ("read my screen", DesktopRequest("read_screen")),
     ("screen padh ke batao", DesktopRequest("read_screen")),
     ("screen पर क्या है", DesktopRequest("read_screen")),
+    ("system status", DesktopRequest("system_status")),
+    ("mera laptop kaisa hai", DesktopRequest("system_status")),
+    ("मेरे लैपटॉप का हाल बताओ", DesktopRequest("system_status")),
+    ("find file budget.xlsx", DesktopRequest("find_file", "budget.xlsx")),
+    ("mere laptop me notes dhoondo", DesktopRequest("find_file", "notes")),
+    ("file report.pdf kholo", DesktopRequest("open_file", "report.pdf")),
+    ("open file report.pdf", DesktopRequest("open_file", "report.pdf")),
+    ("shut down my laptop", DesktopRequest("shutdown_windows")),
+    ("laptop band kar do", DesktopRequest("shutdown_windows")),
+    ("restart my computer", DesktopRequest("restart_windows")),
+    ("shutdown cancel karo", DesktopRequest("cancel_shutdown")),
 ])
 def test_explicit_desktop_requests_are_parsed(phrase, expected):
     assert parse_desktop_request(phrase) == expected
@@ -33,6 +44,8 @@ def test_explicit_desktop_requests_are_parsed(phrase, expected):
     "Tell me what is on my screen",
     "Write a script that opens a browser",
     "The screen says to open Notepad",
+    "How do I find a file?",
+    "Why is my laptop status important?",
 ])
 def test_desktop_discussion_does_not_run_local_actions(phrase):
     assert parse_desktop_request(phrase) is None
@@ -120,3 +133,153 @@ def test_screen_reader_is_called_only_by_an_explicit_read_request():
         screen_reader=lambda: ScreenSnapshot("Browser", "Visible page heading"),
     )
     assert actions.read_active_window() == ScreenSnapshot("Browser", "Visible page heading")
+
+
+def test_file_search_is_limited_to_user_folders_and_returns_matches(tmp_path):
+    docs = tmp_path / "Documents"
+    downloads = tmp_path / "Downloads"
+    desktop = tmp_path / "Desktop"
+    docs.mkdir()
+    downloads.mkdir()
+    desktop.mkdir()
+    target = docs / "Budget 2026.xlsx"
+    target.touch()
+    (tmp_path / "private.txt").touch()
+    actions = WindowsDesktopActions(
+        platform="nt",
+        home_dir=tmp_path,
+        file_opener=lambda _path: None,
+    )
+
+    result = actions.find_file("budget")
+
+    assert str(target) in result
+    assert "private.txt" not in result
+
+
+def test_open_file_requires_a_unique_match_inside_allowed_folders(tmp_path):
+    docs = tmp_path / "Documents"
+    downloads = tmp_path / "Downloads"
+    docs.mkdir()
+    downloads.mkdir()
+    first = docs / "notes.txt"
+    second = downloads / "notes.txt"
+    first.touch()
+    second.touch()
+    opened = []
+    actions = WindowsDesktopActions(
+        platform="nt",
+        home_dir=tmp_path,
+        file_opener=opened.append,
+    )
+
+    with pytest.raises(DesktopActionError, match="more than one"):
+        actions.open_file("notes.txt")
+    assert not opened
+
+
+def test_open_file_rejects_paths_outside_user_folders(tmp_path):
+    docs = tmp_path / "Documents"
+    downloads = tmp_path / "Downloads"
+    desktop = tmp_path / "Desktop"
+    docs.mkdir()
+    downloads.mkdir()
+    desktop.mkdir()
+    outside = tmp_path / "private.txt"
+    outside.touch()
+    actions = WindowsDesktopActions(
+        platform="nt",
+        home_dir=tmp_path,
+        file_opener=lambda _path: None,
+    )
+
+    with pytest.raises(DesktopActionError, match="only open files"):
+        actions.open_file(str(outside))
+
+
+def test_open_file_uses_the_injected_file_opener_for_unique_local_file(tmp_path):
+    docs = tmp_path / "Documents"
+    docs.mkdir()
+    target = docs / "notes.txt"
+    target.touch()
+    opened = []
+    actions = WindowsDesktopActions(
+        platform="nt",
+        home_dir=tmp_path,
+        file_opener=opened.append,
+    )
+
+    assert actions.open_file("notes.txt") == "Opening notes.txt."
+    assert opened == [str(target)]
+
+
+@pytest.mark.parametrize("filename", ["tool.exe", "script.ps1", "macro.xlsm", "shortcut.lnk"])
+def test_open_file_refuses_to_launch_executables_scripts_and_macro_documents(tmp_path, filename):
+    docs = tmp_path / "Documents"
+    docs.mkdir()
+    (docs / filename).touch()
+    opened = []
+    actions = WindowsDesktopActions(
+        platform="nt",
+        home_dir=tmp_path,
+        file_opener=opened.append,
+    )
+
+    with pytest.raises(DesktopActionError, match="can run software"):
+        actions.open_file(filename)
+    assert not opened
+
+
+def test_system_status_reports_local_platform_and_disk(tmp_path):
+    (tmp_path / "Documents").mkdir()
+    actions = WindowsDesktopActions(platform="nt", home_dir=tmp_path)
+
+    status = actions.system_status()
+
+    assert "Windows" in status
+    assert "logical CPU cores" in status
+    assert "GB free" in status
+
+
+@pytest.mark.parametrize(("action", "expected"), [
+    ("shutdown_windows", ["shutdown.exe", "/s", "/t", "60"]),
+    ("restart_windows", ["shutdown.exe", "/r", "/t", "60"]),
+])
+def test_power_action_uses_a_delayed_fixed_windows_command(action, expected):
+    calls = []
+    desktop = WindowsDesktopActions(
+        platform="nt",
+        launch_process=lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    reply = desktop.run_confirmed_system_action(action)
+
+    assert calls == [(expected, {"shell": False})]
+    assert "60 seconds" in reply
+
+
+def test_cancel_shutdown_uses_checked_fixed_command():
+    calls = []
+    desktop = WindowsDesktopActions(
+        platform="nt",
+        run_process=lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    desktop.run_confirmed_system_action("cancel_shutdown")
+
+    assert calls == [(
+        ["shutdown.exe", "/a"],
+        {"check": True, "shell": False, "capture_output": True, "text": True, "timeout": 10},
+    )]
+
+
+def test_power_action_rejects_unknown_action_without_launching_process():
+    calls = []
+    desktop = WindowsDesktopActions(
+        platform="nt",
+        launch_process=lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    with pytest.raises(DesktopActionError, match="not available"):
+        desktop.run_confirmed_system_action("run arbitrary command")
+    assert not calls

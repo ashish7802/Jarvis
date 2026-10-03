@@ -1,7 +1,7 @@
-"""Tests for the minimal floating-orb desktop shell."""
+"""Tests for the holographic desktop assistant console."""
 import pytest
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
 
 from app.assistant.commands import desktop_command
 from app.assistant.language import localize
@@ -118,3 +118,61 @@ def test_spoken_panel_hints_match_the_visible_console():
         assert action in {"show_controls", "hide_controls", "show_chat", "hide_chat"}
         assert expected in reply
         assert localize(reply, "hi") != reply
+
+
+def test_power_action_dialog_defaults_to_cancel_and_does_not_execute(qt_app, tmp_path, monkeypatch):
+    class Worker:
+        def __init__(self):
+            self.actions = []
+
+        def confirm_system_action(self, action):
+            self.actions.append(action)
+            return "scheduled"
+
+    prefs = QSettings(str(tmp_path / "power-cancel.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    worker = Worker()
+    window.worker = worker
+    monkeypatch.setattr(
+        "app.desktop.QMessageBox.warning",
+        lambda *_args: QMessageBox.StandardButton.No,
+    )
+
+    window._confirm_system_action({
+        "action": "shutdown_windows",
+        "message": "Do you want to shut down Windows?",
+    })
+
+    assert worker.actions == []
+    assert "cancelled" in window.notice_label.text().lower()
+    window.worker = None
+    window.close()
+
+
+def test_power_action_only_runs_after_explicit_dialog_approval(qt_app, tmp_path, monkeypatch):
+    class Worker:
+        def __init__(self):
+            self.actions = []
+
+        def confirm_system_action(self, action):
+            self.actions.append(action)
+            return "Windows restart is scheduled in 60 seconds."
+
+    prefs = QSettings(str(tmp_path / "power-confirm.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    worker = Worker()
+    window.worker = worker
+    monkeypatch.setattr(
+        "app.desktop.QMessageBox.warning",
+        lambda *_args: QMessageBox.StandardButton.Yes,
+    )
+
+    window._confirm_system_action({
+        "action": "restart_windows",
+        "message": "Do you want to restart Windows?",
+    })
+
+    assert worker.actions == ["restart_windows"]
+    assert "60 seconds" in window.notice_label.text()
+    window.worker = None
+    window.close()

@@ -18,6 +18,15 @@ class FakeDesktopActions:
     def open_website(self, target):
         return f"Opening {target} in your browser."
 
+    def find_file(self, query):
+        return f"I found {query}."
+
+    def open_file(self, query):
+        return f"Opening {query}."
+
+    def system_status(self):
+        return "Windows is online."
+
 
 def test_read_screen_requires_an_explicit_opt_in():
     engine = _make_engine(cooldown_seconds=0)
@@ -64,3 +73,40 @@ def test_open_app_command_is_local_and_does_not_call_the_model():
     assert actions.opened_apps == ["calculator"]
     assert not engine.ai.calls
     assert len(engine.context) == 1
+
+
+def test_local_system_status_and_file_actions_do_not_call_the_model():
+    engine = _make_engine(cooldown_seconds=0, on_event=lambda *_event: None)
+    actions = FakeDesktopActions()
+    engine.desktop_actions = actions
+    engine.startup()
+
+    for prompt, expected in [
+        ("system status", "Windows is online."),
+        ("find file budget.xlsx", "I found budget.xlsx."),
+        ("open file notes.txt", "Opening notes.txt."),
+    ]:
+        engine.submit_text(prompt)
+        engine.process_pending_wake()
+        assert engine.tts.spoken[-1] == expected
+
+    assert not engine.ai.calls
+
+
+def test_power_action_waits_for_desktop_confirmation_without_running():
+    events = []
+    engine = _make_engine(cooldown_seconds=0, on_event=lambda *event: events.append(event))
+    actions = FakeDesktopActions()
+    engine.desktop_actions = actions
+    engine.startup()
+
+    engine.submit_text("shut down my laptop")
+    engine.process_pending_wake()
+
+    confirmations = [payload for name, payload in events if name == "confirmation_requested"]
+    assert confirmations == [{
+        "action": "shutdown_windows",
+        "message": "Do you want to shut down Windows? This gives you 60 seconds to cancel.",
+    }]
+    assert engine.tts.spoken[-1] == "I've asked for confirmation before I shut down Windows."
+    assert not engine.ai.calls

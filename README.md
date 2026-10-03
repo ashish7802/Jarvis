@@ -66,6 +66,18 @@ while listening, understanding, thinking and replying.
   Menu shortcut, and normal HTTP(S) websites after a direct voice request such
   as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
   model-generated shell commands, type into apps, click buttons, or submit forms.
+- **Local system help** can report basic OS/CPU/disk/RAM status, find filenames
+  in Desktop/Documents/Downloads, and open a uniquely matched file from those
+  folders. Try "system status", "find file budget.xlsx", or "open file notes.txt".
+  File discovery is bounded, stays on-device, and does not send filenames to the
+  AI provider. Ambiguous filenames need a more specific request. Executables,
+  scripts, shortcuts, and macro-enabled documents are not launched as files.
+  Voice detection recognizes speech, not speaker identity; destructive,
+  financial, installation, or messaging actions are not executed from a voice
+  match alone.
+- Windows shutdown/restart requests require an on-screen confirmation and are
+  scheduled with a 60-second delay; "cancel shutdown" asks Windows to abort that
+  pending action. Jarvis never executes generated shell commands.
 - **Local productivity skills** work without an AI request: "set a timer for 10
   minutes to stretch", "remind me tomorrow at 9 am to call mom", "take a note:
   buy oat milk", "show reminders", and "show notes". Reminders and notes are

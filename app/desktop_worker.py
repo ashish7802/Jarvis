@@ -8,6 +8,7 @@ import threading
 
 from PySide6.QtCore import QThread, Signal
 
+from app.assistant.desktop_actions import DesktopActionError
 from app.system.hotkey import EmergencyHotkey
 
 log = logging.getLogger("jarvis.desktop")
@@ -83,6 +84,14 @@ class AssistantWorker(QThread):
 
     def submit(self, text):
         return self.engine is not None and self.engine.submit_text(text)
+
+    def confirm_system_action(self, action):
+        if self.engine is None or self.engine.desktop_actions is None:
+            return "System actions are unavailable."
+        try:
+            return self.engine.desktop_actions.run_confirmed_system_action(action)
+        except DesktopActionError as exc:
+            return str(exc)
 
     def pause(self, paused):
         return self.engine is not None and self.engine.set_listening_enabled(not paused)

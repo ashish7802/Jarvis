@@ -1,10 +1,4 @@
-"""Minimal native desktop shell for the voice assistant.
-
-The normal desktop surface is intentionally just one floating orb. Jarvis is
-used by voice, so a dashboard full of controls and a transcript only gets in
-the way. A small right-click menu keeps the few safety and recovery actions
-available without turning the app back into a control panel.
-"""
+"""Native desktop console for the voice assistant."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,6 +20,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
+    QMessageBox,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -407,6 +402,8 @@ class JarvisWindow(QMainWindow):
             self._refresh_state()
         elif event == "message":
             self._append_message(payload.get("role", "assistant"), payload.get("text", ""))
+        elif event == "confirmation_requested":
+            self._confirm_system_action(payload)
         elif event == "clear":
             self._clear_messages()
         elif event == "listening":
@@ -511,6 +508,37 @@ class JarvisWindow(QMainWindow):
         if self.worker is not None and not self.worker.clear():
             self.notice_label.setText("Conversation can be cleared when Jarvis is ready.")
             self.notice_label.show()
+
+    def _confirm_system_action(self, request):
+        action = request.get("action")
+        descriptions = {
+            "shutdown_windows": "Shut down Windows",
+            "restart_windows": "Restart Windows",
+        }
+        title = descriptions.get(action)
+        if title is None:
+            self.notice_label.setText("That system action is not available.")
+            self.notice_label.show()
+            return
+        answer = QMessageBox.warning(
+            self,
+            title,
+            "Save your work first. If approved, Windows schedules this action "
+            "in 60 seconds; you can say “cancel shutdown” to abort it.\n\n"
+            + str(request.get("message", "")),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self.notice_label.setText(f"{title} cancelled. Nothing was changed.")
+            self.notice_label.show()
+            return
+        if self.worker is None:
+            result = "Jarvis is not ready to perform that action."
+        else:
+            result = self.worker.confirm_system_action(action)
+        self.notice_label.setText(str(result))
+        self.notice_label.show()
 
     def _language_changed(self, index):
         mode = self.language_combo.itemData(index)

@@ -10,9 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import ipaddress
 import os
+import platform
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import time
 import unicodedata
 import webbrowser
 from urllib.parse import urlsplit, urlunsplit
@@ -20,6 +23,15 @@ from urllib.parse import urlsplit, urlunsplit
 
 MAX_SCREEN_CHARS = 12_000
 MAX_SCREEN_LINES = 180
+MAX_FILE_SEARCH_RESULTS = 5
+MAX_FILE_SEARCH_DIRS = 2500
+FILE_SEARCH_SECONDS = 2.0
+EXECUTABLE_FILE_SUFFIXES = {
+    ".bat", ".cmd", ".com", ".cpl", ".dll", ".docm", ".exe", ".hta", ".inf",
+    ".jar", ".js", ".jse", ".lnk", ".msi", ".msp", ".potm", ".ppam", ".pptm",
+    ".ps1", ".psm1", ".py", ".pyw", ".reg", ".scr", ".url", ".vbe", ".vbs",
+    ".wsf", ".wsh", ".xlam", ".xlsm", ".xltm", ".dotm",
+}
 
 WEBSITE_ALIASES = {
     "google": ("https://www.google.com", "Google"),
@@ -116,10 +128,52 @@ _OPEN_SUFFIX = re.compile(
     r"खोलो|खोल\s+दो|चालू\s+करो)$",
     re.IGNORECASE,
 )
+_FIND_FILE = re.compile(
+    r"^(?:find|search for|locate|dhoondo|dhundho|ढूंढो|ढूँढो|खोजो)\s+"
+    r"(?:(?:the|my|a)\s+)?(?:file\s+)?(.+)$",
+    re.IGNORECASE,
+)
+_FIND_FILE_HINGLISH = re.compile(
+    r"^(?:mere|my)\s+(?:laptop|computer|pc)(?:\s+(?:me|mein|on))?\s+"
+    r"(.+?)\s+(?:dhoondo|dhundho|ढूंढो|ढूँढो|खोजो)$",
+    re.IGNORECASE,
+)
+_FILE_OPEN = re.compile(
+    r"^(?:open|launch|khol|kholo|खोलो|खोल\s+दो)\s+"
+    r"(?:the\s+)?file\s+(.+)$",
+    re.IGNORECASE,
+)
+_FILE_OPEN_SUFFIX = re.compile(
+    r"^file\s+(.+?)\s+(?:khol|kholo|खोलो|खोल\s+दो)$",
+    re.IGNORECASE,
+)
+_LOCAL_STATUS_PHRASES = {
+    "system status", "show system status", "show system info", "system information",
+    "laptop status", "how is my laptop", "check my laptop", "mera laptop kaisa hai",
+    "laptop ki halat batao", "system ki halat batao", "मेरे लैपटॉप का हाल बताओ",
+    "लैपटॉप की स्थिति बताओ", "सिस्टम की जानकारी दो",
+}
+_POWER_ACTIONS = {
+    "shutdown_windows": (
+        "shutdown", "shut down", "shut down my laptop", "shutdown my computer",
+        "turn off my laptop", "turn off my computer", "laptop band karo",
+        "laptop band kar do", "computer band karo", "pc band kar do",
+        "लैपटॉप बंद करो", "कंप्यूटर बंद करो",
+    ),
+    "restart_windows": (
+        "restart", "restart my laptop", "restart my computer", "reboot my laptop",
+        "laptop restart karo", "computer restart karo", "laptop dobara chalao",
+        "लैपटॉप रीस्टार्ट करो", "कंप्यूटर रीस्टार्ट करो",
+    ),
+    "cancel_shutdown": (
+        "cancel shutdown", "abort shutdown", "shutdown cancel karo",
+        "shutdown rok do", "शटडाउन रोक दो", "शटडाउन रद्द करो",
+    ),
+}
 
 
 def parse_desktop_request(text: str) -> DesktopRequest | None:
-    """Recognize only short, explicit local open/read requests."""
+    """Recognize only short, explicit local system requests."""
     value = text.strip()
     value = re.sub(r"^(?:(?:hey\s+)?jarvis)\s*[,!:]?\s*", "", value, flags=re.IGNORECASE)
     value = re.sub(r"^(?:please|can you|could you|would you)\s+", "", value, flags=re.IGNORECASE)
@@ -128,8 +182,24 @@ def parse_desktop_request(text: str) -> DesktopRequest | None:
     normalized = _normalize_phrase(value)
     if normalized in _READ_SCREEN_PHRASES:
         return DesktopRequest("read_screen")
+    if normalized in {_normalize_phrase(item) for item in _LOCAL_STATUS_PHRASES}:
+        return DesktopRequest("system_status")
+    for action, phrases in _POWER_ACTIONS.items():
+        if normalized in {_normalize_phrase(item) for item in phrases}:
+            return DesktopRequest(action)
     if normalized in {"open browser", "launch browser", "start browser", "browser kholo"}:
         return DesktopRequest("open_browser")
+
+    match = _FILE_OPEN.fullmatch(value) or _FILE_OPEN_SUFFIX.fullmatch(value)
+    if match:
+        target = _clean_target(match.group(1))
+        return DesktopRequest("open_file", target) if target else None
+
+    match = _FIND_FILE.fullmatch(value) or _FIND_FILE_HINGLISH.fullmatch(value)
+    if match:
+        target = _clean_target(match.group(1))
+        if target and len(target) <= 180:
+            return DesktopRequest("find_file", target)
 
     match = _OPEN_PREFIX.fullmatch(value)
     category = ""
@@ -247,7 +317,7 @@ def find_start_menu_shortcut(name: str, roots: list[Path] | None = None) -> Path
 
 
 class WindowsDesktopActions:
-    """Open approved targets and read accessible text from the active window."""
+    """Perform bounded local actions and read opt-in text from the active window."""
 
     def __init__(
         self,
@@ -255,16 +325,22 @@ class WindowsDesktopActions:
         platform: str | None = None,
         startfile=None,
         launch_process=None,
+        run_process=None,
         browser_open=None,
         menu_dirs: list[Path] | None = None,
         screen_reader=None,
+        file_opener=None,
+        home_dir: Path | None = None,
     ):
         self.platform = platform or os.name
         self.startfile = startfile if startfile is not None else getattr(os, "startfile", None)
         self.launch_process = launch_process or subprocess.Popen
+        self.run_process = run_process or subprocess.run
         self.browser_open = browser_open or webbrowser.open
         self.menu_dirs = menu_dirs
         self.screen_reader = screen_reader
+        self.file_opener = file_opener if file_opener is not None else self.startfile
+        self.home_dir = Path(home_dir) if home_dir is not None else Path.home()
 
     def _require_windows(self):
         if self.platform != "nt":
@@ -316,6 +392,173 @@ class WindowsDesktopActions:
         if not self.browser_open(url, new=2):
             raise DesktopActionError("I couldn't open that website in your browser.")
         return f"Opening {label} in your browser."
+
+    def _file_roots(self) -> list[Path]:
+        roots = []
+        for name in ("Desktop", "Documents", "Downloads"):
+            root = self.home_dir / name
+            if root.is_dir():
+                roots.append(root.resolve())
+        return roots
+
+    def _find_files(self, query: str, *, exact: bool = False) -> list[Path]:
+        wanted = query.strip().strip("\"'").casefold()
+        if not wanted or len(wanted) > 180 or any(char in wanted for char in "\\/:*?<>|"):
+            raise DesktopActionError("Give me a file name, not a path or wildcard.")
+        roots = self._file_roots()
+        if not roots:
+            raise DesktopActionError("I couldn't find your Desktop, Documents, or Downloads folders.")
+
+        found: list[Path] = []
+        visited = 0
+        deadline = time.monotonic() + FILE_SEARCH_SECONDS
+        for root in roots:
+            for current, directories, files in os.walk(root, followlinks=False):
+                visited += 1
+                if visited > MAX_FILE_SEARCH_DIRS or time.monotonic() > deadline:
+                    return found
+                directories[:] = [
+                    name for name in directories
+                    if not name.startswith(".") and name.casefold() not in {
+                        "node_modules", "__pycache__", "$recycle.bin"
+                    }
+                ]
+                for name in files:
+                    candidate = name.casefold()
+                    matches = candidate == wanted if exact else wanted in candidate
+                    if matches:
+                        found.append(Path(current) / name)
+                        if len(found) >= MAX_FILE_SEARCH_RESULTS:
+                            return found
+        return found
+
+    def find_file(self, query: str) -> str:
+        self._require_windows()
+        files = self._find_files(query)
+        if not files:
+            return f"I couldn't find a file matching {query!r} in Desktop, Documents, or Downloads."
+        locations = "; ".join(str(path) for path in files)
+        suffix = f" Showing up to {MAX_FILE_SEARCH_RESULTS} results." if len(files) == MAX_FILE_SEARCH_RESULTS else ""
+        return f"I found {len(files)} matching file(s): {locations}.{suffix}"
+
+    def open_file(self, query: str) -> str:
+        self._require_windows()
+        self._validate_file_query(query)
+        candidate = Path(query.strip().strip("\"'")).expanduser()
+        roots = self._file_roots()
+        if candidate.is_absolute():
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError as exc:
+                raise DesktopActionError("I couldn't find that file.") from exc
+            if not any(resolved.is_relative_to(root) for root in roots):
+                raise DesktopActionError(
+                    "For safety, I can only open files in Desktop, Documents, or Downloads."
+                )
+            if not resolved.is_file():
+                raise DesktopActionError("That path isn't a file.")
+            matches = [resolved]
+        else:
+            matches = self._find_files(query, exact=True)
+            matches = [
+                path.resolve(strict=True)
+                for path in matches
+                if path.is_file() and any(path.resolve().is_relative_to(root) for root in roots)
+            ]
+        if not matches:
+            raise DesktopActionError(
+                f"I couldn't find {query!r} in Desktop, Documents, or Downloads."
+            )
+        if len(matches) > 1:
+            choices = "; ".join(str(path) for path in matches[:3])
+            raise DesktopActionError(
+                f"I found more than one matching file. Please say a more specific name: {choices}."
+            )
+        if matches[0].suffix.casefold() in EXECUTABLE_FILE_SUFFIXES:
+            raise DesktopActionError(
+                "That file can run software, scripts, or macros. I won't launch it as a document. "
+                "Open an installed app by its name instead."
+            )
+        if self.file_opener is None:
+            raise DesktopActionError("Opening local files is available in the Windows desktop app only.")
+        self.file_opener(str(matches[0]))
+        return f"Opening {matches[0].name}."
+
+    @staticmethod
+    def _validate_file_query(query: str) -> None:
+        if (not query.strip() or len(query) > 260
+                or any(ord(char) < 32 for char in query)):
+            raise DesktopActionError("Give me one clear file name or a path under Desktop, Documents, or Downloads.")
+
+    def system_status(self) -> str:
+        self._require_windows()
+        home_usage = shutil.disk_usage(self.home_dir)
+        free_gb = home_usage.free / (1024 ** 3)
+        total_gb = home_usage.total / (1024 ** 3)
+        status = (
+            f"Your system is running {platform.system()} {platform.release()} "
+            f"on {os.cpu_count() or 'an unknown number of'} logical CPU cores. "
+            f"The system drive has {free_gb:.1f} GB free out of {total_gb:.1f} GB."
+        )
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", wintypes.DWORD),
+                    ("dwMemoryLoad", wintypes.DWORD),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            memory = MemoryStatus()
+            memory.dwLength = ctypes.sizeof(memory)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
+                available = memory.ullAvailPhys / (1024 ** 3)
+                total = memory.ullTotalPhys / (1024 ** 3)
+                status += f" {available:.1f} GB of {total:.1f} GB RAM is available."
+        except (AttributeError, OSError):
+            pass
+        return status
+
+    def run_confirmed_system_action(self, action: str) -> str:
+        self._require_windows()
+        commands = {
+            "shutdown_windows": ["shutdown.exe", "/s", "/t", "60"],
+            "restart_windows": ["shutdown.exe", "/r", "/t", "60"],
+            "cancel_shutdown": ["shutdown.exe", "/a"],
+        }
+        command = commands.get(action)
+        if command is None:
+            raise DesktopActionError("That system action is not available.")
+        if action == "cancel_shutdown":
+            try:
+                self.run_process(
+                    command, check=True, shell=False, capture_output=True,
+                    text=True, timeout=10,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise DesktopActionError(
+                    "Windows did not report a pending shutdown or restart to cancel."
+                ) from exc
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise DesktopActionError("Windows could not cancel the pending shutdown.") from exc
+            return "I asked Windows to cancel the pending shutdown or restart."
+        try:
+            self.launch_process(command, shell=False)
+        except OSError as exc:
+            raise DesktopActionError(
+                f"Windows could not start the requested system action: {exc}"
+            ) from exc
+        if action == "shutdown_windows":
+            return "Windows shutdown is scheduled in 60 seconds. Say cancel shutdown to stop it."
+        return "Windows restart is scheduled in 60 seconds. Say cancel shutdown to stop it."
 
     def read_active_window(self) -> ScreenSnapshot:
         self._require_windows()

@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -22,10 +24,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QMessageBox,
     QScrollArea,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from app.audio.devices import list_input_devices, recommended_input_device
 from app.hud_widgets import STYLE, HudBackground, VoiceOrb, app_icon
 from app.desktop_worker import AssistantWorker
 
@@ -75,7 +79,21 @@ class JarvisWindow(QMainWindow):
         self.screen_read_enabled = self.preferences.value(
             "screen_read_enabled", False, type=bool
         )
+        self.continuous_listening = self.preferences.value(
+            "continuous_listening", True, type=bool
+        )
         self.language_mode = self.preferences.value("language_mode", "auto")
+        self.input_devices = []
+        self.input_device_error = None
+        try:
+            self.input_devices = list_input_devices()
+        except Exception as exc:
+            self.input_device_error = str(exc)
+        saved_device = self.preferences.value("input_device", "")
+        valid_ids = {device.identifier for device in self.input_devices}
+        self.input_device = saved_device if saved_device in valid_ids else recommended_input_device(self.input_devices)
+        if saved_device and saved_device not in valid_ids:
+            self.input_device_error = "Your saved microphone isn't available. Select another input."
         self.ai_provider = "Connecting…"
 
         self.setWindowTitle(TITLE)
@@ -134,7 +152,22 @@ class JarvisWindow(QMainWindow):
         self.provider_value = self._add_status_row(system_layout, "AI LINK", self.ai_provider)
         self.wake_value = self._add_status_row(system_layout, "WAKE WORD", "Loading…")
         self.mic_value = self._add_status_row(system_layout, "MICROPHONE", "Checking…")
+        self.memory_value = self._add_status_row(system_layout, "SAVED TURNS", "Loading…")
         system_layout.addSpacing(8)
+        system_layout.addWidget(self._small_label("Microphone input"))
+        self.input_device_combo = QComboBox()
+        self.input_device_combo.addItem("System default", "")
+        for device in self.input_devices:
+            self.input_device_combo.addItem(device.label, device.identifier)
+        device_index = self.input_device_combo.findData(self.input_device)
+        self.input_device_combo.setCurrentIndex(max(0, device_index))
+        self.input_device_combo.currentIndexChanged.connect(self._input_device_changed)
+        system_layout.addWidget(self.input_device_combo)
+        self.hands_free_toggle = QCheckBox("Hands-free listening")
+        self.hands_free_toggle.setChecked(self.continuous_listening)
+        self.hands_free_toggle.toggled.connect(self._toggle_continuous_listening)
+        system_layout.addWidget(self.hands_free_toggle)
+        system_layout.addWidget(self._small_label("Speech filtered locally · no hidden recording"))
         self.voice_toggle = QCheckBox("Spoken replies")
         self.voice_toggle.setChecked(self.voice_enabled)
         self.voice_toggle.toggled.connect(self._toggle_voice)
@@ -179,10 +212,14 @@ class JarvisWindow(QMainWindow):
         conversation_title.setObjectName("eyebrow")
         conversation_header.addWidget(conversation_title)
         conversation_header.addStretch(1)
-        clear_button = QPushButton("Clear")
+        clear_button = QPushButton("Clear memory")
         clear_button.setObjectName("quiet")
         clear_button.clicked.connect(self._clear_conversation)
         conversation_header.addWidget(clear_button)
+        memory_button = QPushButton("Review memory")
+        memory_button.setObjectName("quiet")
+        memory_button.clicked.connect(self._review_memory)
+        conversation_header.addWidget(memory_button)
         conversation_layout.addLayout(conversation_header)
         self.notice_label = QLabel()
         self.notice_label.setObjectName("notice")
@@ -358,6 +395,8 @@ class JarvisWindow(QMainWindow):
             screen_read_enabled=self.preferences.value(
                 "screen_read_enabled", False, type=bool
             ),
+            input_device=self.input_device,
+            continuous_listening=self.continuous_listening,
         )
         self.worker.event.connect(self.on_event)
         self.worker.finished.connect(self._worker_finished)
@@ -397,6 +436,14 @@ class JarvisWindow(QMainWindow):
             self.ai_provider = payload["provider"]
             self.provider_value.setText(self.ai_provider.upper())
             self.wake_value.setText(self.wake_backend.replace("_", " ").title())
+            self.continuous_listening = bool(payload.get("hands_free", False))
+            self.hands_free_toggle.setChecked(self.continuous_listening)
+            self.hands_free_toggle.setEnabled(
+                self.wake_backend != "disabled" and not self.closing
+            )
+            if self.input_device_error:
+                self.notice_label.setText(self.input_device_error)
+                self.notice_label.show()
             if self.wake_backend == "disabled":
                 self.mic_value.setText("Click-to-talk")
             self._refresh_state()
@@ -406,6 +453,16 @@ class JarvisWindow(QMainWindow):
             self._confirm_system_action(payload)
         elif event == "clear":
             self._clear_messages()
+        elif event == "memory_count":
+            self.memory_value.setText(str(payload))
+        elif event == "memory_preview":
+            self._show_memory(payload)
+        elif event == "input_device":
+            self.input_device = str(payload)
+            self.preferences.setValue("input_device", self.input_device)
+        elif event == "hands_free":
+            self.continuous_listening = bool(payload)
+            self.preferences.setValue("continuous_listening", self.continuous_listening)
         elif event == "listening":
             self.paused = not payload
             self.pause_pending = False
@@ -426,6 +483,8 @@ class JarvisWindow(QMainWindow):
             mode = "PAUSED"
         if mode == "STANDBY" and self.microphone_connected is False:
             hint = "Microphone disconnected · right-click to retry or quit"
+        elif mode == "STANDBY" and self.continuous_listening and not self.paused:
+            hint = "Listening locally for speech directed to Jarvis"
         elif mode == "STANDBY" and self.wake_backend == "disabled":
             hint = "Click the core or press Ctrl+Space to talk"
         else:
@@ -457,6 +516,13 @@ class JarvisWindow(QMainWindow):
         )
         self.send_button.setEnabled(mode == "STANDBY" and not self.closing and not self.failed)
         self.language_combo.setEnabled(mode == "STANDBY" and not self.closing and not self.failed)
+        self.input_device_combo.setEnabled(
+            mode in ("STANDBY", "STARTING") and not self.closing and not self.failed
+        )
+        self.hands_free_toggle.setEnabled(
+            mode in ("STANDBY", "STARTING") and self.wake_backend != "disabled"
+            and not self.closing and not self.failed
+        )
         self.orb.update()
 
     def _append_message(self, role, text):
@@ -505,9 +571,82 @@ class JarvisWindow(QMainWindow):
             self.notice_label.show()
 
     def _clear_conversation(self):
-        if self.worker is not None and not self.worker.clear():
+        if self.worker is None:
+            self.notice_label.setText("Jarvis is still starting.")
+            self.notice_label.show()
+            return
+        answer = QMessageBox.question(
+            self,
+            "Clear saved memory",
+            "This removes all saved turns from Jarvis's local memory for this Windows account. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if not self.worker.clear():
             self.notice_label.setText("Conversation can be cleared when Jarvis is ready.")
             self.notice_label.show()
+
+    def _review_memory(self):
+        if self.worker is None or not self.worker.review_memory():
+            self.notice_label.setText("Saved memory can be reviewed when Jarvis is ready.")
+            self.notice_label.show()
+
+    def _show_memory(self, turns):
+        if not turns:
+            QMessageBox.information(self, "Saved memory", "No conversation turns are saved yet.")
+            return
+        lines = []
+        for user, assistant in turns:
+            lines.extend((f"You: {user}", f"Jarvis: {assistant}", ""))
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Recent saved memory")
+        dialog.resize(720, 520)
+        layout = QVBoxLayout(dialog)
+        transcript = QTextEdit(dialog)
+        transcript.setReadOnly(True)
+        transcript.setPlainText(
+            "\n".join(lines).strip()
+            + "\n\nStored locally and protected by your Windows account."
+        )
+        layout.addWidget(transcript)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec()
+
+    def _input_device_changed(self, index):
+        identifier = self.input_device_combo.itemData(index) or ""
+        previous = self.input_device
+        if identifier == previous:
+            return
+        if self.worker is not None:
+            if self.worker.engine is None:
+                self.worker.input_device = identifier
+            elif not self.worker.set_input_device(identifier):
+                old_index = self.input_device_combo.findData(previous)
+                self.input_device_combo.blockSignals(True)
+                self.input_device_combo.setCurrentIndex(max(0, old_index))
+                self.input_device_combo.blockSignals(False)
+                return
+        self.input_device = identifier
+        self.preferences.setValue("input_device", identifier)
+
+    def _toggle_continuous_listening(self, enabled):
+        if self.worker is not None:
+            if self.worker.engine is None:
+                self.worker.continuous_listening = bool(enabled)
+            elif not self.worker.set_continuous_listening(enabled):
+                self.hands_free_toggle.blockSignals(True)
+                self.hands_free_toggle.setChecked(self.continuous_listening)
+                self.hands_free_toggle.blockSignals(False)
+                self.notice_label.setText("Hands-free listening isn't available with the current microphone listener.")
+                self.notice_label.show()
+                return
+        self.continuous_listening = bool(enabled)
+        self.preferences.setValue("continuous_listening", self.continuous_listening)
 
     def _confirm_system_action(self, request):
         action = request.get("action")

@@ -32,6 +32,8 @@ def run_check(factory):
         # Load real wake assets; smoke_pipeline separately tests wake inference.
         # Keep the check deterministic without listening to room audio.
         engine.wake = None
+        engine.context.clear()
+        engine.memory = None
         engine.startup_greeting = None
         return engine, configured
     window = JarvisWindow(check_factory, preferences=prefs)

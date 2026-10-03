@@ -28,6 +28,9 @@ from typing import Optional
 import numpy as np
 import sounddevice as sd
 
+from app.audio.devices import resolve_input_device
+from app.audio.vad import VoiceActivitySegmenter
+
 log = logging.getLogger("jarvis.wakeword")
 
 SAMPLE_RATE = 16_000
@@ -53,6 +56,10 @@ class WakeWordDetector(ABC):
     @abstractmethod
     def set_enabled(self, enabled: bool) -> None:
         """Pause/resume detection without tearing down the audio stream."""
+
+    def set_input_device(self, identifier: str | None) -> None:
+        """Select the stable input-device identifier used for capture."""
+        self.input_device = identifier
 
     def set_callback(self, cb) -> None:  # noqa: D401
         """Optional: register a zero-arg callback fired on detection."""
@@ -84,6 +91,7 @@ class EnergyGateWakeWord(WakeWordDetector):
         threshold_rms: float = 1500.0,
         trigger_frames: int = 4,  # consecutive frames above threshold
         cooldown_seconds: float = 1.5,
+        input_device: str | None = None,
     ) -> None:
         self.keyword = keyword
         self.sample_rate = sample_rate
@@ -91,6 +99,7 @@ class EnergyGateWakeWord(WakeWordDetector):
         self.threshold_rms = threshold_rms
         self.trigger_frames = trigger_frames
         self.cooldown_seconds = cooldown_seconds
+        self.input_device = input_device
         self._stop_event = threading.Event()
         self._enabled = threading.Event()
         self._enabled.set()
@@ -99,9 +108,16 @@ class EnergyGateWakeWord(WakeWordDetector):
         self._last_trigger: float = 0.0
         # Auto-calibration runs the first second of audio to learn noise floor.
         self._noise_floor: float = 0.0
+        self._speech_callback = None
+        self._speech_segmenter = VoiceActivitySegmenter(sample_rate, round(frame_size * 1000 / sample_rate))
+        self._speech_reset_pending = threading.Event()
 
     def set_callback(self, cb) -> None:
         self._on_detect = cb
+
+    def set_speech_callback(self, cb) -> None:
+        self._speech_callback = cb
+        self._speech_reset_pending.set()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -135,6 +151,7 @@ class EnergyGateWakeWord(WakeWordDetector):
                 channels=1,
                 dtype="int16",
                 blocksize=self.frame_size,
+                device=resolve_input_device(self.input_device),
             )
         except Exception as exc:
             log.exception("energy-wake: cannot open mic: %s", exc)
@@ -151,7 +168,21 @@ class EnergyGateWakeWord(WakeWordDetector):
                     break
                 if block.size == 0:
                     continue
+                if self._speech_reset_pending.is_set():
+                    self._speech_reset_pending.clear()
+                    self._speech_segmenter.reset()
+                if not self._enabled.is_set():
+                    self._speech_segmenter.reset()
+                    consecutive = 0
+                    continue
                 rms = float(math.sqrt(np.mean(block.astype(np.float32) ** 2)))
+                if self._speech_callback is not None:
+                    speech = self._speech_segmenter.feed(block, "soft")
+                    if speech is not None:
+                        try:
+                            self._speech_callback(speech)
+                        except Exception:
+                            log.exception("energy-wake: speech callback failed")
                 if not calibrated:
                     calib_samples.append(rms)
                     if len(calib_samples) >= 30:  # ~0.9s
@@ -164,9 +195,6 @@ class EnergyGateWakeWord(WakeWordDetector):
                             self._noise_floor,
                             self.threshold_rms,
                         )
-                    continue
-                if not self._enabled.is_set():
-                    consecutive = 0
                     continue
                 if rms >= self.threshold_rms:
                     consecutive += 1
@@ -220,6 +248,7 @@ class OpenWakeWordDetector(WakeWordDetector):
         sample_rate: int = SAMPLE_RATE,
         frame_size: int = FRAME_SIZE,
         inference_framework: str = "onnx",
+        input_device: str | None = None,
     ) -> None:
         self.model = model
         self.threshold = float(threshold)
@@ -228,6 +257,7 @@ class OpenWakeWordDetector(WakeWordDetector):
         self.sample_rate = sample_rate
         self.frame_size = frame_size
         self.inference_framework = inference_framework
+        self.input_device = input_device
 
         self._stop_event = threading.Event()
         self._enabled = threading.Event()
@@ -252,6 +282,11 @@ class OpenWakeWordDetector(WakeWordDetector):
         self.on_audio = None
         self.on_microphone = None
         self._level_frames = 0
+        self._speech_callback = None
+        self._speech_segmenter = VoiceActivitySegmenter(
+            sample_rate, round(frame_size * 1000 / sample_rate)
+        )
+        self._speech_reset_pending = threading.Event()
 
     def set_hearing_profile(self, profile):
         from app.audio.hearing import PROFILES
@@ -263,6 +298,10 @@ class OpenWakeWordDetector(WakeWordDetector):
 
     def set_callback(self, cb) -> None:
         self._on_detect = cb
+
+    def set_speech_callback(self, cb) -> None:
+        self._speech_callback = cb
+        self._speech_reset_pending.set()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -308,6 +347,8 @@ class OpenWakeWordDetector(WakeWordDetector):
         if not self._enabled.is_set():
             self._consecutive_hits = 0
             self._accum = np.zeros((0,), dtype=np.int16)
+            self._speech_segmenter.reset()
+            self._speech_reset_pending.clear()
             return
 
         # Only the capture thread touches model state, avoiding reset/predict races.
@@ -316,6 +357,9 @@ class OpenWakeWordDetector(WakeWordDetector):
             self._accum = np.zeros((0,), dtype=np.int16)
             self._consecutive_hits = 0
             self._oww_model.reset()
+        if self._speech_reset_pending.is_set():
+            self._speech_reset_pending.clear()
+            self._speech_segmenter.reset()
 
         x = block.reshape(-1).astype(np.int16, copy=False)
         if x.size == 0:
@@ -324,6 +368,13 @@ class OpenWakeWordDetector(WakeWordDetector):
         from app.audio.hearing import PROFILES, boost_pcm, meter_value
         level = float(np.sqrt(np.mean(x.astype(np.float32) ** 2)))
         self.noise_floor.update(level)
+        if self._speech_callback is not None:
+            speech = self._speech_segmenter.feed(x, self.hearing_profile)
+            if speech is not None:
+                try:
+                    self._speech_callback(speech)
+                except Exception:
+                    log.exception("openwakeword: speech callback failed")
         self._level_frames += 1
         if self.on_audio and self._level_frames % 3 == 0:
             self.on_audio({"level": meter_value(level), "active": False, "source": "wake",
@@ -408,7 +459,8 @@ class OpenWakeWordDetector(WakeWordDetector):
         while not self._stop_event.is_set():
             try:
                 with sd.InputStream(samplerate=self.sample_rate, channels=1,
-                                    dtype="int16", blocksize=self.frame_size) as stream:
+                                    dtype="int16", blocksize=self.frame_size,
+                                    device=resolve_input_device(self.input_device)) as stream:
                     self._reset_pending.set()
                     log.info("Wake-word microphone connected")
                     if self.on_microphone:
@@ -477,6 +529,7 @@ class PorcupineWakeWord(WakeWordDetector):
         access_key: str,
         keyword_path: str = "",
         sensitivity: float = 0.5,
+        input_device: str | None = None,
     ) -> None:
         if not _HAS_PORCUPINE:
             raise RuntimeError(
@@ -486,6 +539,7 @@ class PorcupineWakeWord(WakeWordDetector):
         self.access_key = access_key
         self.keyword_path = keyword_path or ""
         self.sensitivity = sensitivity
+        self.input_device = input_device
         self._handle = None
         self._stop_event = threading.Event()
         self._enabled = threading.Event()
@@ -547,6 +601,9 @@ class PorcupineWakeWord(WakeWordDetector):
             self._enabled.clear()
         log.debug("PorcupineWakeWord enabled=%s", enabled)
 
+    def set_input_device(self, identifier: str | None) -> None:
+        self.input_device = identifier
+
     def _run(self) -> None:
         assert self._handle is not None
         frame_length = self._handle.frame_length
@@ -556,6 +613,7 @@ class PorcupineWakeWord(WakeWordDetector):
                 channels=1,
                 dtype="int16",
                 blocksize=frame_length,
+                device=resolve_input_device(getattr(self, "input_device", None)),
             )
         except Exception as exc:
             log.exception("porcupine: cannot open mic: %s", exc)
@@ -607,6 +665,7 @@ def build_wake_word(
     porcupine_access_key: str = "",
     porcupine_keyword_path: str = "",
     porcupine_sensitivity: float = 0.5,
+    input_device: str | None = None,
 ) -> Optional[WakeWordDetector]:
     """Return the best available wake-word detector, or None if disabled.
 
@@ -635,13 +694,14 @@ def build_wake_word(
             return _ready_openwakeword(
                 model=openwakeword_model or keyword,
                 threshold=openwakeword_threshold,
+                input_device=input_device,
             )
         except Exception as exc:
             log.warning(
                 "openWakeWord unavailable (%s) — using energy-gate fallback",
                 exc,
             )
-            return EnergyGateWakeWord(keyword=keyword)
+            return EnergyGateWakeWord(keyword=keyword, input_device=input_device)
 
     if backend == "porcupine":
         if porcupine_access_key:
@@ -650,6 +710,7 @@ def build_wake_word(
                     access_key=porcupine_access_key,
                     keyword_path=porcupine_keyword_path,
                     sensitivity=porcupine_sensitivity,
+                    input_device=input_device,
                 )
             except Exception as exc:
                 log.warning(
@@ -659,6 +720,7 @@ def build_wake_word(
                     return _ready_openwakeword(
                         model=openwakeword_model or keyword,
                         threshold=openwakeword_threshold,
+                        input_device=input_device,
                     )
                 except Exception as exc2:
                     log.warning(
@@ -666,22 +728,23 @@ def build_wake_word(
                         "using energy-gate fallback",
                         exc2,
                     )
-                    return EnergyGateWakeWord(keyword=keyword)
+                    return EnergyGateWakeWord(keyword=keyword, input_device=input_device)
         # No Porcupine key — try openWakeWord as the free default.
         try:
             return _ready_openwakeword(
                 model=openwakeword_model or keyword,
                 threshold=openwakeword_threshold,
+                input_device=input_device,
             )
         except Exception as exc:
             log.warning(
                 "openWakeWord unavailable (%s) — using energy-gate fallback",
                 exc,
             )
-            return EnergyGateWakeWord(keyword=keyword)
+            return EnergyGateWakeWord(keyword=keyword, input_device=input_device)
 
     if backend == "energy":
-        return EnergyGateWakeWord(keyword=keyword)
+        return EnergyGateWakeWord(keyword=keyword, input_device=input_device)
 
     # Unknown backend name: try openWakeWord, then energy.
     log.warning("unknown wakeword_backend=%r — trying openWakeWord", backend)
@@ -689,10 +752,11 @@ def build_wake_word(
         return _ready_openwakeword(
             model=openwakeword_model or keyword,
             threshold=openwakeword_threshold,
+            input_device=input_device,
         )
     except Exception as exc:
         log.warning(
             "openWakeWord unavailable (%s) — using energy-gate fallback",
             exc,
         )
-        return EnergyGateWakeWord(keyword=keyword)
+        return EnergyGateWakeWord(keyword=keyword, input_device=input_device)

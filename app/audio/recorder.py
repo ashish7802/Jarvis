@@ -21,6 +21,7 @@ from typing import Optional
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+from app.audio.devices import resolve_input_device
 from app.audio.hearing import PROFILES, NoiseFloor, boost_pcm, meter_value
 
 log = logging.getLogger("jarvis.audio")
@@ -58,6 +59,7 @@ class Recorder:
         silence_threshold_rms: float | None = None,
         hearing_profile: str = "soft",
         on_level=None,
+        input_device: str | None = None,
     ) -> None:
         self.sample_rate = sample_rate
         self.channels = channels
@@ -66,6 +68,7 @@ class Recorder:
         self.silence_threshold_rms = silence_threshold_rms
         self.hearing_profile = hearing_profile if hearing_profile in PROFILES else "soft"
         self.on_level = on_level
+        self.input_device = input_device
         self.noise_source = None
         self.turn_cancelled = threading.Event()
         self._stop = threading.Event()
@@ -78,6 +81,9 @@ class Recorder:
         if profile not in PROFILES:
             raise ValueError("Unknown hearing profile")
         self.hearing_profile = profile
+
+    def set_input_device(self, identifier: str | None) -> None:
+        self.input_device = identifier
 
     def _interrupted(self):
         return self._stop.is_set() or self.turn_cancelled.is_set()
@@ -98,7 +104,8 @@ class Recorder:
         deadline = time.monotonic() + self.max_seconds
         try:
             with sd.InputStream(samplerate=self.sample_rate, channels=self.channels,
-                                dtype=DTYPE, blocksize=block_size) as stream:
+                                dtype=DTYPE, blocksize=block_size,
+                                device=resolve_input_device(self.input_device)) as stream:
                 while not self._interrupted() and time.monotonic() < deadline:
                     block, overflowed = stream.read(block_size)
                     if not block.size:

@@ -1,4 +1,4 @@
-"""Session-only history, trimmed at complete turn boundaries."""
+"""Bounded in-memory context, trimmed at complete turn boundaries."""
 from dataclasses import dataclass, field
 from app.ai.base import ChatMessage
 

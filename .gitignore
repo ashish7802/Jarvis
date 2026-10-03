@@ -39,4 +39,5 @@ desktop.ini
 
 # Local data
 .cache/
+data/conversation_memory.sqlite3*
 *.pyd

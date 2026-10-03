@@ -19,11 +19,23 @@ while listening, understanding, thinking and replying.
   450 ms onset buffer and capped amplification help capture quieter questions.
   Exact commands **"soft voice mode"**, **"balanced mode"** and **"noisy room
   mode"** change it without a cloud AI request.
-- The core reacts to measured microphone volume while recording. The hidden
-  controls include a live input meter and clipping/connection feedback. Wake
+- The core reacts to measured microphone volume while recording. The console
+  includes a live input meter and clipping/connection feedback. Wake
   microphone disconnects are retried automatically. Soft mode works best in
   a quiet room; it cannot recover speech drowned out by noise or guarantee
   whisper/far-field recognition. Use Noisy room near a fan or traffic.
+- Desktop hands-free listening is on by default and visibly indicated in the
+  console. Speech activity detection and transcription run locally; only
+  phrases the local addressee gate recognizes as meant for Jarvis are sent to
+  the configured AI provider or saved. This is a phrase-based heuristic, not
+  speaker identification, and can miss naturally phrased requests. Say
+  "Jarvis" or use the visible talk button when it does.
+- Choose the microphone from **Microphone input**. JARVIS prefers a physical
+  microphone array over virtual audio devices and remembers the choice by
+  device/host API name rather than its temporary numeric device index. The
+  selected device is shared by wake detection and button-triggered recording.
+  Use **Pause microphone** or turn off **Hands-free listening** to stop ambient
+  speech segmentation; those controls remain visible.
 - **Escape** or a second orb click cancels the current turn. Recording and
   playback stop promptly; an in-flight transcription or cloud request must
   finish before the next question, and its late answer is discarded. You can
@@ -49,14 +61,18 @@ while listening, understanding, thinking and replying.
   Short small talk stays short; follow-ups and light humor are used when helpful,
   without repeating "Sir" or "yaar" in every answer. You can explicitly request
   formal or pure Hindi. The assistant remains honest about being an AI.
-- Ordinary conversation is welcome; you do not need to phrase everything as a
-  command. A wake phrase or orb click starts listening, but if a sentence sounds
-  clearly meant for someone else Jarvis won't answer on their behalf. If it
-  genuinely can't tell who you meant, it asks a quick, friendly clarification.
 - The console shows the current conversation, assistant state, AI/wake-word/
-  microphone status, and diagnostics. Spoken replies, microphone pause, and
-  screen-reading opt-in are available as visible controls; right-click the
-  assistant core for the same recovery and quit actions.
+  microphone status, and diagnostics. Spoken replies, microphone pause,
+  hands-free listening, microphone selection, and screen-reading opt-in are
+  available as visible controls; right-click the assistant core for recovery
+  and quit actions.
+- Jarvis-directed turns are stored in an encrypted local SQLite database using
+  Windows DPAPI, so only the current Windows account can decrypt them. The
+  **Review memory** and **Clear** controls let you inspect recent turns or
+  remove saved conversation memory from Jarvis's local database. Recent turns may be included
+  as context in AI requests; ambient speech that fails the local addressee
+  gate is discarded without cloud processing or persistence. No hidden
+  recording or background process is used.
 - If Jarvis cannot understand a sentence, it asks you to say it another way.
   Its conversation prompt follows context, understands Hindi/Hinglish/English,
   and asks one focused clarification instead of guessing when needed. Open-ended

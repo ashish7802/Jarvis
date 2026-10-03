@@ -84,6 +84,7 @@ class FakeWake(WakeWordDetector):
 
     def __init__(self) -> None:
         self.cb = None
+        self.speech_cb = None
         self.enabled = True
         self.started = False
         self.stopped = False
@@ -100,9 +101,16 @@ class FakeWake(WakeWordDetector):
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
 
+    def set_speech_callback(self, cb) -> None:
+        self.speech_cb = cb
+
     def fire(self) -> None:
         if self.cb is not None:
             self.cb()
+
+    def fire_speech(self, audio):
+        if self.speech_cb is not None:
+            self.speech_cb(audio)
 
 
 class FakeRecorder:
@@ -156,6 +164,81 @@ def test_engine_happy_path():
     assert eng.stt.calls == 1
     assert "I am here" in eng.tts.spoken[-1]
     assert "what is Python" in eng.context.messages()[-2].content
+
+
+def test_hands_free_discards_non_directed_speech_before_ai_or_memory():
+    class Memory:
+        turns = []
+
+        def add_turn(self, user, assistant):
+            self.turns.append((user, assistant))
+
+        def count(self):
+            return len(self.turns)
+
+        def recent_turns(self, _limit):
+            return self.turns
+
+    memory = Memory()
+    eng = _make_engine(
+        stt=FakeSTT("I wonder what that person meant."),
+        memory=memory,
+        continuous_listening=True,
+    )
+    eng.startup()
+    eng.wake.fire_speech(np.ones(4800, dtype=np.int16))
+    eng.process_pending_wake()
+    assert eng.state == State.STANDBY
+    assert eng.ai.calls == []
+    assert memory.turns == []
+
+
+def test_hands_free_routes_jarvis_addressed_speech_and_remembers_turn():
+    class Memory:
+        turns = []
+
+        def add_turn(self, user, assistant):
+            self.turns.append((user, assistant))
+
+        def count(self):
+            return len(self.turns)
+
+        def recent_turns(self, _limit):
+            return self.turns
+
+    memory = Memory()
+    eng = _make_engine(
+        stt=FakeSTT("Jarvis, explain how Python works."),
+        memory=memory,
+        continuous_listening=True,
+    )
+    eng.startup()
+    eng.wake.fire_speech(np.ones(4800, dtype=np.int16))
+    eng.process_pending_wake()
+    assert eng.ai.calls
+    assert memory.turns == [("Jarvis, explain how Python works.", "I am here, Sir.")]
+
+
+def test_engine_restores_saved_turns_into_follow_up_context():
+    class Memory:
+        turns = [("I prefer concise replies.", "I'll keep replies concise.")]
+
+        def add_turn(self, user, assistant):
+            self.turns.append((user, assistant))
+
+        def count(self):
+            return len(self.turns)
+
+        def recent_turns(self, _limit):
+            return self.turns
+
+    eng = _make_engine(memory=Memory())
+    eng.startup()
+    eng.submit_text("Explain Python")
+    eng.process_pending_wake()
+    previous = [message.content for message in eng.ai.calls[-1]]
+    assert "I prefer concise replies." in previous
+    assert "I'll keep replies concise." in previous
 
 
 def test_ai_prompt_supports_open_conversation_and_addressee_clarification():

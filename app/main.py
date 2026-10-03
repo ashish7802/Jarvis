@@ -24,6 +24,7 @@ from app.assistant.desktop_actions import WindowsDesktopActions
 from app.assistant.engine import AssistantEngine
 from app.assistant.productivity import ProductivityStore
 from app.audio.recorder import Player, Recorder
+from app.assistant.memory import ConversationMemory
 from app.config import get_settings
 from app.logging_config import get_logger, setup_logging
 from app.stt.service import STTService
@@ -87,6 +88,7 @@ def _build_wake(settings):
         porcupine_access_key=settings.porcupine_access_key,
         porcupine_keyword_path=settings.porcupine_keyword_path,
         porcupine_sensitivity=settings.porcupine_sensitivity,
+        input_device=settings.input_device or None,
     )
 
 
@@ -139,7 +141,8 @@ def build_engine(settings, on_event=None, desktop=False):
         services.append(tts)
         recorder = Recorder(max_seconds=settings.listen_timeout,
                             silence_timeout=settings.silence_timeout,
-                            hearing_profile=settings.hearing_profile)
+                            hearing_profile=settings.hearing_profile,
+                            input_device=settings.input_device or None)
         player = Player()
         tts.attach_player(player)
         progress("Preparing the wake-word listener…")
@@ -160,6 +163,9 @@ def build_engine(settings, on_event=None, desktop=False):
             language_mode=settings.language_mode,
             desktop_actions=WindowsDesktopActions() if desktop else None,
             productivity=ProductivityStore(settings.data_dir),
+            memory=ConversationMemory(settings.data_dir / "conversation_memory.sqlite3"),
+            continuous_listening=desktop,
+            input_device=settings.input_device or None,
             continuous_without_wake=not desktop,
         )
     except Exception:

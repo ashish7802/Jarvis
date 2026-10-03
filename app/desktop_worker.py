@@ -18,7 +18,8 @@ class AssistantWorker(QThread):
     event = Signal(str, object)
 
     def __init__(self, factory, speech_enabled=True, parent=None, hearing_profile=None,
-                 language_mode=None, screen_read_enabled=False):
+                 language_mode=None, screen_read_enabled=False, input_device=None,
+                 continuous_listening=True):
         super().__init__(parent)
         self.factory = factory
         self.engine = None
@@ -26,6 +27,8 @@ class AssistantWorker(QThread):
         self.hearing_profile = hearing_profile
         self.language_mode = language_mode
         self.screen_read_enabled = bool(screen_read_enabled)
+        self.input_device = input_device
+        self.continuous_listening = bool(continuous_listening)
         self.stop_requested = threading.Event()
 
     def run(self):
@@ -36,6 +39,10 @@ class AssistantWorker(QThread):
             self.engine.set_hearing_profile(self.hearing_profile or self.engine.hearing_profile)
             self.engine.set_language_mode(self.language_mode or self.engine.language_mode)
             self.engine.set_screen_read_enabled(self.screen_read_enabled)
+            if self.input_device is not None and not self.engine.set_input_device(self.input_device):
+                self.event.emit("notice", "The selected microphone couldn't be activated. Choose an available input device.")
+            if not self.engine.set_continuous_listening(self.continuous_listening):
+                self.continuous_listening = False
             if self.stop_requested.is_set():
                 return
             self.event.emit("configured", {
@@ -43,6 +50,8 @@ class AssistantWorker(QThread):
                 "wake": self.engine.wake.name if self.engine.wake else "disabled",
                 "hotkey": settings.hotkey_exit,
                 "logs": str(settings.logs_dir),
+                "input_device": self.engine.input_device or "",
+                "hands_free": self.engine.continuous_listening,
             })
             hotkey = EmergencyHotkey(settings.hotkey_exit)
             hotkey.set_callback(self.request_stop)
@@ -82,6 +91,12 @@ class AssistantWorker(QThread):
     def set_screen_read_enabled(self, enabled):
         return self.engine is not None and self.engine.set_screen_read_enabled(enabled)
 
+    def set_continuous_listening(self, enabled):
+        return self.engine is not None and self.engine.set_continuous_listening(enabled)
+
+    def set_input_device(self, identifier):
+        return self.engine is not None and self.engine.set_input_device(identifier)
+
     def submit(self, text):
         return self.engine is not None and self.engine.submit_text(text)
 
@@ -98,6 +113,9 @@ class AssistantWorker(QThread):
 
     def clear(self):
         return self.engine is not None and self.engine.clear_conversation()
+
+    def review_memory(self):
+        return self.engine is not None and self.engine.review_memory()
 
     def set_voice(self, enabled):
         self.speech_enabled = enabled

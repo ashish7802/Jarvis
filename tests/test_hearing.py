@@ -8,6 +8,7 @@ import pytest
 
 from app.audio.hearing import boost_pcm
 from app.audio.recorder import Recorder, Player, rms_level
+from app.audio.vad import VoiceActivitySegmenter
 from app.assistant.states import State
 from app.tts.service import TTSService
 from tests.test_engine import _make_engine
@@ -79,6 +80,52 @@ def test_quiet_gain_is_bounded_and_does_not_clip_or_amplify_silence():
     peaked[0] = 29000
     assert np.max(np.abs(boost_pcm(peaked, 6).astype(np.int32))) <= 30000
     assert not boost_pcm(np.zeros(100, dtype=np.int16), 6).any()
+
+
+def test_local_voice_activity_segmenter_returns_only_completed_speech():
+    segmenter = VoiceActivitySegmenter()
+    silence = np.zeros(480, dtype=np.int16)
+    voice = np.tile([500, -500], 240).astype(np.int16)
+    assert all(segmenter.feed(silence) is None for _ in range(10))
+    result = None
+    for _ in range(12):
+        candidate = segmenter.feed(voice)
+        if candidate is not None:
+            result = candidate
+    for _ in range(24):
+        candidate = segmenter.feed(silence)
+        if candidate is not None:
+            result = candidate
+    assert result is not None
+    assert result.dtype == np.int16
+    assert np.count_nonzero(result) >= 12 * voice.size
+
+
+def test_recorder_uses_selected_input_device(monkeypatch):
+    import app.audio.devices as devices
+    from app.audio.devices import InputDevice
+
+    selected = InputDevice("WASAPI\nPhysical microphone", "Physical microphone", "WASAPI", 4)
+    monkeypatch.setattr(devices, "list_input_devices", lambda: [selected])
+    opened = []
+
+    class Stream:
+        def __init__(self, **kwargs):
+            opened.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, count):
+            return np.zeros((count, 1), dtype=np.int16), False
+
+    monkeypatch.setattr("app.audio.recorder.sd.InputStream", Stream)
+    audio = Recorder(max_seconds=0.01, input_device=selected.identifier).record()
+    assert audio is None
+    assert opened[0]["device"] == 4
 
 
 def test_cancel_during_ai_drops_late_answer_and_next_question_succeeds():

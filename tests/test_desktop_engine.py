@@ -72,7 +72,8 @@ def test_open_app_command_is_local_and_does_not_call_the_model():
 
     assert actions.opened_apps == ["calculator"]
     assert not engine.ai.calls
-    assert len(engine.context) == 1
+    assert len(engine.context) == 3
+    assert engine.context.messages()[-2].content == "open calculator"
 
 
 def test_local_system_status_and_file_actions_do_not_call_the_model():

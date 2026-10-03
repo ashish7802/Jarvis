@@ -27,9 +27,33 @@ def test_desktop_shows_original_holographic_assistant_console(qt_app, tmp_path):
         assert window.message_scroll.isVisible()
         assert isinstance(window.input, QLineEdit)
         assert window.talk_button.isVisible()
+        assert window.hands_free_toggle.isVisible()
+        assert window.input_device_combo.isVisible()
         assert not window.orb.draggable
     finally:
         window.close()
+
+
+def test_clear_memory_requires_confirmation(qt_app, tmp_path, monkeypatch):
+    class Worker:
+        cleared = False
+
+        def clear(self):
+            self.cleared = True
+            return True
+
+    prefs = QSettings(str(tmp_path / "memory-clear.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    worker = Worker()
+    window.worker = worker
+    monkeypatch.setattr(
+        "app.desktop.QMessageBox.question",
+        lambda *_args: QMessageBox.StandardButton.No,
+    )
+    window._clear_conversation()
+    assert not worker.cleared
+    window.worker = None
+    window.close()
 
 
 def test_orb_state_and_audio_feedback(qt_app, tmp_path):

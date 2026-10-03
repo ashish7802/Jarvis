@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 
 from app.wakeword.detector import EnergyGateWakeWord, OpenWakeWordDetector, build_wake_word
@@ -168,3 +170,60 @@ def test_openwakeword_disabled_does_not_call_callback(monkeypatch):
     audio = np.ones((1280 * 3,), dtype=np.int16) * 10_000
     w.process(audio)
     assert fired == []
+
+
+def test_openwakeword_dispatches_completed_local_speech_segments():
+    class FakeOwwModel:
+        def predict(self, _audio):
+            return {"hey_jarvis": 0.0}
+
+    detector = OpenWakeWordDetector(model="hey_jarvis")
+    detector._oww_model = FakeOwwModel()  # noqa: SLF001
+    detector._model_label = "hey_jarvis"  # noqa: SLF001
+    segments = []
+    detector.set_speech_callback(segments.append)
+    silence = np.zeros(480, dtype=np.int16)
+    voice = np.tile([500, -500], 240).astype(np.int16)
+    for _ in range(10):
+        detector.process(silence)
+    for _ in range(12):
+        detector.process(voice)
+    for _ in range(24):
+        detector.process(silence)
+    assert len(segments) == 1
+    assert segments[0].dtype == np.int16
+    detector.set_enabled(False)
+    detector.process(voice)
+    assert len(segments) == 1
+
+
+def test_openwakeword_stream_uses_selected_stable_microphone(monkeypatch):
+    import app.wakeword.detector as mod
+
+    opened = threading.Event()
+    devices = []
+
+    class FakeStream:
+        def __init__(self, **kwargs):
+            devices.append(kwargs["device"])
+
+        def __enter__(self):
+            opened.set()
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, count):
+            return np.zeros((count, 1), dtype=np.int16), False
+
+    detector = OpenWakeWordDetector(input_device="WASAPI\nPhysical mic")
+    monkeypatch.setattr(detector, "_load_model", lambda: None)
+    monkeypatch.setattr(mod, "resolve_input_device", lambda _identifier: 9)
+    monkeypatch.setattr(mod.sd, "InputStream", FakeStream)
+    detector.start()
+    try:
+        assert opened.wait(1)
+    finally:
+        detector.stop()
+    assert devices == [9]

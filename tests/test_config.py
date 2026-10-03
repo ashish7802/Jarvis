@@ -22,8 +22,7 @@ def test_env_override(tmp_path, monkeypatch):
     env = tmp_path / "test.env"
     env.write_text(
         "JARVIS_NAME=Friday\n"
-        "AI_PROVIDER=openai\n"
-        "OPENAI_API_KEY=sk-test\n"
+        "GROQ_API_KEY=gsk-test\n"
         "LISTEN_TIMEOUT=3.5\n"
         "STARTUP_GREETING_DELAY=2\n"
     )
@@ -31,8 +30,8 @@ def test_env_override(tmp_path, monkeypatch):
     reset_settings_cache()
     s = get_settings()
     assert s.jarvis_name == "Friday"
-    assert s.ai_provider == "openai"
-    assert s.openai_api_key == "sk-test"
+    assert s.ai_provider == "mock"
+    assert s.groq_api_key == "gsk-test"
     assert s.listen_timeout == 3.5
     assert s.startup_greeting_delay == 2.0
 

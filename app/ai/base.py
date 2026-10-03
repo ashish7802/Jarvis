@@ -34,20 +34,15 @@ class AIProviderError(RuntimeError):
     """Raised for unrecoverable provider errors during *initialization*."""
 
 
-def build_provider(name: str, *, openai_key: str = "", gemini_key: str = "", model: str = "", request_timeout: float = 15.0, max_attempts: int = 2) -> AIProvider:
+def build_provider(name: str, *, groq_key: str = "", model: str = "", request_timeout: float = 15.0, max_attempts: int = 2) -> AIProvider:
     name = (name or "").strip().lower()
-    if name == "openai":
-        from app.ai.openai_provider import OpenAIProvider
+    if name == "groq":
+        from app.ai.groq_provider import GroqProvider
 
-        if not openai_key:
-            raise AIProviderError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
-        return OpenAIProvider(api_key=openai_key, model=model or "gpt-4o-mini")
-    if name == "gemini":
-        from app.ai.gemini_provider import GeminiProvider
-
-        if not gemini_key:
-            raise AIProviderError("GEMINI_API_KEY is required when AI_PROVIDER=gemini")
-        return GeminiProvider(api_key=gemini_key, model=model or "gemini-3.6-flash", request_timeout=request_timeout, max_attempts=max_attempts)
+        if not groq_key:
+            raise AIProviderError("GROQ_API_KEY is required when AI_PROVIDER=groq")
+        return GroqProvider(api_key=groq_key, model=model or "llama-3.3-70b-versatile",
+                            request_timeout=request_timeout, max_attempts=max_attempts)
     if name == "mock":
         from app.ai.mock_provider import MockProvider
 

@@ -51,18 +51,13 @@ def _configure() -> None:
 
 def _build_ai(settings) -> AIProvider:
     provider = settings.ai_provider
-    # If a key is configured but AI_PROVIDER was left at the offline default,
-    # prefer the real model automatically. This makes a fresh setup smart
-    # without breaking the no-key offline fallback.
-    if provider == "mock":
-        if settings.gemini_api_key:
-            provider = "gemini"
-        elif settings.openai_api_key:
-            provider = "openai"
+    # A configured Groq key enables live chat even if the offline default
+    # remains selected, so setup only requires adding GROQ_API_KEY.
+    if provider == "mock" and settings.groq_api_key:
+        provider = "groq"
     return build_provider(
         provider,
-        openai_key=settings.openai_api_key,
-        gemini_key=settings.gemini_api_key,
+        groq_key=settings.groq_api_key,
         model=settings.ai_model,
         request_timeout=settings.ai_request_timeout,
         max_attempts=settings.ai_max_attempts,

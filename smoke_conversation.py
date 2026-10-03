@@ -1,4 +1,4 @@
-"""Verify real Gemini follow-up context with synthetic, non-personal text."""
+"""Verify real Groq follow-up context with synthetic, non-personal text."""
 from app.config import get_settings
 from app.main import _build_ai
 from app.assistant.conversation import ConversationContext
@@ -14,8 +14,8 @@ def main():
         reply = ai.chat(context.messages() + [ChatMessage("user", prompt)])
         context.add_turn(prompt, reply)
         answer = ai.chat(context.messages() + [ChatMessage("user", "What codename did I just give you? Reply with only the codename.")])
-        assert "blue lantern" in answer.casefold(), "Gemini did not recall the supplied conversation context"
-        print("PASS: real Gemini recalls the prior turn.")
+        assert "blue lantern" in answer.casefold(), "Groq did not recall the supplied conversation context"
+        print("PASS: real Groq recalls the prior turn.")
     finally:
         ai.shutdown()
 

@@ -87,8 +87,6 @@ def setup_logging(logs_dir: Path, level: str = "INFO") -> logging.Logger:
     # Tame chatty third-party loggers.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("openai").setLevel(logging.WARNING)
-    logging.getLogger("google").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("sounddevice").setLevel(logging.WARNING)
 

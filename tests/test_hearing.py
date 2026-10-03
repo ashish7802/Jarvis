@@ -177,21 +177,26 @@ def test_cancel_between_file_read_and_playback_does_not_open_speaker(monkeypatch
     assert not player.play_file(path)
 
 
-def test_cancelled_gemini_turn_skips_retry_but_can_be_reused():
+def test_cancelled_groq_turn_skips_retry_but_can_be_reused():
+    import httpx
     from app.ai.base import AIProviderError, ChatMessage
     from tests.test_reliability import provider_with, ApiError
     provider, calls = provider_with(["Next turn succeeds"])
-    original = provider._client.models.generate_content
+    original = provider._client.post
     failed = []
-    def cancelled_request(**kwargs):
+    def cancelled_request(url, *, json):
         failed.append(True)
         provider.turn_cancelled.set()
-        raise ApiError(503)
-    provider._client.models.generate_content = cancelled_request
+        raise httpx.HTTPStatusError(
+            "temporary failure",
+            request=httpx.Request("POST", url),
+            response=httpx.Response(503),
+        )
+    provider._client.post = cancelled_request
     with pytest.raises(AIProviderError, match="cancelled"):
         provider.chat([ChatMessage("user", "Hello")])
     assert len(failed) == 1
     provider.turn_cancelled.clear()
-    provider._client.models.generate_content = original
+    provider._client.post = original
     assert provider.chat([ChatMessage("user", "Hello again")]) == "Next turn succeeds"
     assert len(calls) == 1

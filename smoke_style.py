@@ -1,4 +1,4 @@
-"""Review real Gemini conversational style and play two sample answers.
+"""Review real Groq conversational style and play two sample answers.
 
 Uses synthetic text only; no microphone recording or STT model loading.
 The JSON preserves the replies for human review; checks alone cannot rate tone.
@@ -41,7 +41,7 @@ def main():
             assert engine.submit_text(prompt)
             engine.process_pending_wake()
             answer = engine.context.last_assistant()
-            assert answer, "Gemini returned no answer"
+            assert answer, "Groq returned no answer"
             hindi = bool(re.search(r"[\u0900-\u097f]", answer))
             assert hindi == (language != "english"), "Wrong reply language"
             if language == "hinglish":

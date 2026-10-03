@@ -9,21 +9,20 @@ log = logging.getLogger("jarvis.ai.mock")
 
 
 _MOCK_REPLIES: dict[str, str] = {
-    "hello": "Hello, Sir. JARVIS at your service.",
-    "hi": "Hello, Sir. JARVIS at your service.",
-    "what time is it": "I'm afraid I don't have access to the system clock, Sir. The mock provider keeps things simple.",
-    "what is python": "Python is a high-level, interpreted programming language known for its clear syntax and broad ecosystem, Sir.",
+    "hello": "Hey! Good to hear from you. What's up?",
+    "hi": "Hey! Good to hear from you. What's up?",
+    "what time is it": "I can't check the clock in demo mode, but I can still help with a few built-in questions.",
+    "what is python": "Python is a popular programming language known for readable code and a huge range of uses.",
     "what can you do": (
-        "I can hold a conversation, answer questions, and demonstrate the JARVIS pipeline, Sir. "
-        "Beyond that, I do not currently control the computer."
+        "I can demonstrate the voice pipeline and answer a few built-in questions. "
+        "For open-ended conversation, add a Groq API key."
     ),
 }
 
 
 _FALLBACK = (
-    "I am operating in mock mode, Sir. I can demonstrate the pipeline, "
-    "but I do not have access to a real language model. Set AI_PROVIDER to "
-    "openai or gemini and provide an API key for live answers."
+    "I'm in mock mode right now, so I can only answer a few built-in examples. "
+    "To chat about any topic, add a Groq API key."
 )
 
 

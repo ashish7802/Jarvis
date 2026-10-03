@@ -73,7 +73,7 @@ def test_unrecognized_speech_gives_feedback_without_inventing_a_question():
     engine = _make_engine(stt=FakeSTT(""), cooldown_seconds=0)
     engine.startup()
     run_cycle(engine)
-    assert "couldn't understand" in engine.tts.spoken[-1]
+    assert "say it another way" in engine.tts.spoken[-1]
     assert not engine.ai.calls
     assert len(engine.context) == 1
 

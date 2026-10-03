@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from app.ai.base import AIProviderError, ChatMessage
-from app.ai.gemini_provider import GeminiProvider
+from app.ai.groq_provider import GroqProvider
 from app.assistant.commands import local_reply
 from app.assistant.conversation import ConversationContext
 from app.assistant.states import State
@@ -117,42 +117,56 @@ def test_local_controls_are_exact_and_use_real_time():
 
 
 def provider_with(responses):
-    provider = GeminiProvider.__new__(GeminiProvider)
-    provider._model_name = "test-model"
+    provider = GroqProvider.__new__(GroqProvider)
+    provider._model = "test-model"
     provider._cancelled = threading.Event()
     provider.turn_cancelled = threading.Event()
     provider.max_attempts = 2
     calls = []
-    def generate_content(**kwargs):
-        calls.append(kwargs)
+    class Response:
+        def raise_for_status(self):
+            if isinstance(self.result, Exception):
+                raise self.result
+
+        def json(self):
+            return {"choices": [{"message": {"content": self.result}}]}
+
+        def __init__(self, result):
+            self.result = result
+
+    def post(url, *, json):
+        calls.append((url, json))
         response = responses.pop(0)
         if isinstance(response, Exception):
-            raise response
-        return SimpleNamespace(text=response)
-    provider._client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+            error = httpx.HTTPStatusError("failed", request=httpx.Request("POST", url),
+                                          response=httpx.Response(response.status_code))
+            raise error
+        return Response(response)
+    import httpx
+    provider._client = SimpleNamespace(post=post)
     return provider, calls
 
 
 class ApiError(Exception):
-    def __init__(self, code):
-        self.code = code
+    def __init__(self, status_code):
+        self.status_code = status_code
 
 
-def test_gemini_retries_temporary_failure(monkeypatch):
+def test_groq_retries_temporary_failure(monkeypatch):
     provider, calls = provider_with([ApiError(503), "Recovered"])
     monkeypatch.setattr(provider.turn_cancelled, "wait", lambda delay: False)
     assert provider.chat([ChatMessage("user", "Hi")]) == "Recovered"
     assert len(calls) == 2
 
 
-def test_gemini_does_not_retry_access_errors():
+def test_groq_does_not_retry_access_errors():
     provider, calls = provider_with([ApiError(403)])
     with pytest.raises(AIProviderError, match="access was denied"):
         provider.chat([ChatMessage("user", "Hi")])
     assert len(calls) == 1
 
 
-def test_gemini_empty_response_is_an_error():
+def test_groq_empty_response_is_an_error():
     provider, _ = provider_with([""])
     with pytest.raises(AIProviderError, match="rephrase"):
         provider.chat([ChatMessage("user", "Hi")])

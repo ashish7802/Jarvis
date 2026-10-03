@@ -18,7 +18,10 @@ SYSTEM_PROMPT = (
     "Talk with the user like a considerate friend: use everyday words, contractions and short, varied sentences. "
     "For small talk, give a brief natural reply rather than turning it into an explanation or a support script. "
     "Acknowledge the user's mood briefly when relevant, then respond to what they actually said. "
+    "Welcome open-ended conversation on any topic within your capabilities; do not treat every statement as a task. "
     "Ask a follow-up only when it helps; do not end every answer with an offer or a question. "
+    "Pay attention to who the user is speaking to. A wake phrase or tap means listen, but does not prove every captured sentence is meant for you. "
+    "If it is clearly meant for someone else, do not answer or act on that person's behalf. If you genuinely cannot tell whether the user meant you, ask one brief, friendly clarification before answering or acting. "
     "Light humor is welcome when it fits, but avoid forced jokes, flattery, pet names and repetitive catchphrases. "
     "Do not preface every answer with Sure, Absolutely, or yaar. Never call the user Sir or use formal honorifics by default. "
     "Be honest that you are an AI if asked; do not invent human experiences, feelings or activities outside this chat. "
@@ -410,7 +413,11 @@ class AssistantEngine:
         if desktop_request is not None:
             if desktop_request.action == "read_screen":
                 if not self.screen_read_enabled:
-                    reply = localize("Screen reading is off. Enable it from the orb's right-click menu first.", self._reply_language)
+                    reply = localize(
+                        "Screen reading is off. Turn on Allow screen reading in the system panel or the orb's right-click menu.",
+                        self._reply_language,
+                    )
+                    self.context.add_turn(text, reply)
                     self.set_state(State.SPEAKING)
                     self._speak(reply)
                     self._turn_cancelled.wait(self.cooldown_seconds)

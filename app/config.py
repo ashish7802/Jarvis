@@ -111,10 +111,9 @@ class Settings(BaseSettings):
     ai_max_attempts: int = Field(default=2, ge=1, le=3)
 
     # AI
-    ai_provider: Literal["openai", "gemini", "mock"] = "mock"
+    ai_provider: Literal["groq", "mock"] = "mock"
     ai_model: str = ""
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
+    groq_api_key: str = ""
 
     # TTS
     tts_provider: Literal["edge", "mock"] = "edge"

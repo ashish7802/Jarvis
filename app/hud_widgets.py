@@ -5,48 +5,47 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient
 from PySide6.QtWidgets import QWidget, QLabel, QSizePolicy
 
-ACCENT = "#007aff"
+ACCENT = "#42ddff"
 STYLE = """
-QMainWindow, QWidget { background: transparent; color: #f5f8ff; font-family: 'Segoe UI Variable', 'Segoe UI'; font-size: 13px; }
+QMainWindow, QWidget { background: transparent; color: #e8f8ff; font-family: 'Segoe UI Variable', 'Segoe UI'; font-size: 13px; }
 QLabel { background: transparent; border: none; }
-QLabel#brand { color: #1d1d1f; font-size: 24px; font-weight: 700; letter-spacing: 1px; }
-QLabel#muted { color: #86868b; font-size: 12px; }
-QLabel#eyebrow { color: #86868b; font-size: 11px; font-weight: 600; letter-spacing: 1px; }
-QLabel#heroTitle { color: #1d1d1f; font-size: 25px; font-weight: 650; letter-spacing: .2px; }
-QLabel#statusBadge { color: #007aff; background: #e8f2ff; border: 1px solid #c7e0ff; border-radius: 12px; padding: 5px 10px; font-size: 11px; font-weight: 600; }
-QLabel#notice { color: #9a6700; background: #fff8e6; border: 1px solid #f2d58a; border-radius: 12px; padding: 10px 12px; }
-QFrame#chatCard { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 18px; }
-QFrame#controls { background: #ffffff; border: 1px solid #e5e5ea; border-radius: 18px; }
-QFrame#userBubble { background: #f5f5f7; border: none; border-radius: 14px; }
-QFrame#assistantBubble { background: #f0f7ff; border: none; border-radius: 14px; }
-QLabel#message { color: #1d1d1f; font-size: 14px; }
-QPushButton { background: #ffffff; color: #1d1d1f; border: 1px solid #d2d2d7; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
-QPushButton:hover { background: #f5f5f7; border-color: #a1a1a6; }
-QPushButton:pressed { background: #e8e8ed; }
-QPushButton:disabled { color: #aeaeb2; background: #f5f5f7; border-color: #e5e5ea; }
-QPushButton#primary { background: #007aff; color: #ffffff; border-color: #007aff; font-weight: 600; }
-QPushButton#primary:hover { background: #006ee6; border-color: #006ee6; }
-QPushButton#primary:pressed { background: #005ec4; border-color: #005ec4; }
-QPushButton#primary:disabled { color: #ffffff; background: #b6d7ff; border-color: #b6d7ff; }
-QPushButton:focus, QLineEdit:focus, QComboBox:focus { border: 2px solid #007aff; }
-QPushButton#quiet { background: transparent; border: none; color: #007aff; padding: 5px 8px; }
-QPushButton#quiet:hover { color: #005ec4; background: #eef6ff; }
-QPushButton#toggle:checked { color: #006ee6; background: #e8f2ff; border-color: #b7d8ff; }
-QLineEdit { background: #ffffff; color: #1d1d1f; border: 1px solid #d2d2d7; border-radius: 10px; padding: 12px; selection-background-color: #b7d8ff; }
-QComboBox { background: #ffffff; color: #1d1d1f; border: 1px solid #d2d2d7; border-radius: 10px; padding: 9px 10px; }
-QComboBox QAbstractItemView { background: #ffffff; color: #1d1d1f; selection-background-color: #e8f2ff; selection-color: #1d1d1f; border: 1px solid #d2d2d7; }
-QCheckBox { color: #1d1d1f; spacing: 8px; }
-QCheckBox::indicator { width: 17px; height: 17px; border: 1px solid #c7c7cc; border-radius: 5px; background: #ffffff; }
-QCheckBox::indicator:hover { border-color: #007aff; }
-QCheckBox::indicator:checked { background: #007aff; border-color: #007aff; }
-QProgressBar { background: #e5e5ea; border: none; border-radius: 3px; }
-QProgressBar::chunk { background: #007aff; border-radius: 3px; }
+QLabel#brand { color: #e8f8ff; font-size: 25px; font-weight: 700; letter-spacing: 3px; }
+QLabel#muted { color: #7898aa; font-size: 12px; }
+QLabel#eyebrow { color: #6f9eb1; font-size: 10px; font-weight: 700; letter-spacing: 1.8px; }
+QLabel#heroTitle { color: #e8f8ff; font-size: 24px; font-weight: 650; letter-spacing: .2px; }
+QLabel#statusBadge { color: #8df1ff; background: #102a39; border: 1px solid #215b70; border-radius: 12px; padding: 6px 11px; font-size: 11px; font-weight: 700; }
+QLabel#notice { color: #ffdc91; background: #332b1e; border: 1px solid #725a2d; border-radius: 10px; padding: 10px 12px; }
+QFrame#panel { background: rgba(10, 28, 43, 225); border: 1px solid #173d52; border-radius: 16px; }
+QFrame#chatCard { background: #102a3b; border: 1px solid #20526a; border-radius: 14px; }
+QFrame#userBubble { background: #102b40; border: 1px solid #1a4760; border-radius: 13px; }
+QFrame#assistantBubble { background: #0e3544; border: 1px solid #1b5967; border-radius: 13px; }
+QLabel#message { color: #e4f6ff; font-size: 14px; }
+QPushButton { background: #102a3b; color: #d9f4ff; border: 1px solid #24516a; border-radius: 10px; padding: 10px 14px; font-size: 12px; font-weight: 600; }
+QPushButton:hover { background: #15394c; border-color: #42ddff; }
+QPushButton:pressed { background: #0a202f; }
+QPushButton:disabled { color: #587385; background: #0b1d2a; border-color: #193446; }
+QPushButton#primary { background: #0b7089; color: #f1fdff; border-color: #36cbe8; font-weight: 700; }
+QPushButton#primary:hover { background: #1087a2; border-color: #8df1ff; }
+QPushButton#primary:pressed { background: #07556a; }
+QPushButton#primary:disabled { color: #8ba8b4; background: #194051; border-color: #28576b; }
+QPushButton#quiet { background: transparent; border: 1px solid #20485c; color: #77dff2; padding: 8px 10px; }
+QPushButton#quiet:hover { color: #d9fbff; background: #102b3b; }
+QPushButton#toggle:checked { color: #a4f1ff; background: #103c4b; border-color: #329db1; }
+QLineEdit { background: #091c29; color: #e8f8ff; border: 1px solid #24516a; border-radius: 10px; padding: 13px; selection-background-color: #17647b; }
+QComboBox { background: #0b2231; color: #e8f8ff; border: 1px solid #24516a; border-radius: 9px; padding: 9px 10px; }
+QComboBox QAbstractItemView { background: #0b2231; color: #e8f8ff; selection-background-color: #17647b; selection-color: #ffffff; border: 1px solid #24516a; }
+QCheckBox { color: #c3dce7; spacing: 8px; }
+QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #376076; border-radius: 4px; background: #091c29; }
+QCheckBox::indicator:hover { border-color: #42ddff; }
+QCheckBox::indicator:checked { background: #087895; border-color: #42ddff; }
 QScrollArea, QWidget#messages { background: transparent; border: none; }
 QScrollBar:vertical { background: transparent; width: 7px; }
-QScrollBar::handle:vertical { background: #c7c7cc; border-radius: 3px; min-height: 25px; }
+QScrollBar::handle:vertical { background: #24516a; border-radius: 3px; min-height: 25px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-QToolTip { background: #ffffff; color: #1d1d1f; border: 1px solid #d2d2d7; border-radius: 8px; padding: 6px; }
+QMenu { background: #0b2231; color: #e8f8ff; border: 1px solid #24516a; }
+QMenu::item:selected { background: #17647b; }
+QToolTip { background: #0b2231; color: #e8f8ff; border: 1px solid #24516a; border-radius: 8px; padding: 6px; }
 """
 
 
@@ -56,13 +55,13 @@ def app_icon():
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#ffffff"))
+    p.setBrush(QColor("#071521"))
     p.drawRoundedRect(QRectF(4, 4, 120, 120), 22, 22)
     p.setPen(QPen(QColor(ACCENT), 5))
     p.drawEllipse(QPointF(64, 64), 44, 44)
-    p.setPen(QPen(QColor("#5ac8fa"), 3))
+    p.setPen(QPen(QColor("#9af2ff"), 3))
     p.drawEllipse(QPointF(64, 64), 33, 33)
-    p.setPen(QPen(QColor("#007aff"), 4))
+    p.setPen(QPen(QColor("#42ddff"), 4))
     path = QPainterPath(QPointF(43, 48))
     path.lineTo(85, 48)
     path.lineTo(64, 86)
@@ -75,11 +74,18 @@ def app_icon():
 class HudBackground(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor("#f5f5f7"))
-        glow = QRadialGradient(self.width()/2, self.height()*.42, self.width()*.6)
-        glow.setColorAt(0, QColor("#ffffff"))
-        glow.setColorAt(1, QColor("#f5f5f7"))
+        p.fillRect(self.rect(), QColor("#06121d"))
+        glow = QRadialGradient(self.width()*.53, self.height()*.42, self.width()*.8)
+        glow.setColorAt(0, QColor("#102c3c"))
+        glow.setColorAt(.55, QColor("#091b29"))
+        glow.setColorAt(1, QColor("#06121d"))
         p.fillRect(self.rect(), glow)
+        p.setPen(QPen(QColor(52, 143, 171, 12), 1))
+        spacing = 36
+        for x in range(0, self.width(), spacing):
+            p.drawLine(x, 0, x, self.height())
+        for y in range(0, self.height(), spacing):
+            p.drawLine(0, y, self.width(), y)
         p.end()
 
 
@@ -99,6 +105,7 @@ class VoiceOrb(QWidget):
         self.mode = "STARTING"
         self.audio_level = 0.0
         self.display_level = 0.0
+        self.draggable = True
         self._drag_origin = None
         self._window_origin = None
         self._dragging = False
@@ -123,6 +130,8 @@ class VoiceOrb(QWidget):
 
     def mouseMoveEvent(self, event):
         if (
+            self.draggable
+            and
             self._drag_origin is not None
             and event.buttons() & Qt.MouseButton.LeftButton
         ):
@@ -155,13 +164,13 @@ class VoiceOrb(QWidget):
         p.scale(scale, scale)
         active = self.mode in ("LISTENING", "SPEAKING")
         thinking = self.mode in ("THINKING", "TRANSCRIBING", "STARTING")
-        color = QColor("#698d9c" if self.mode == "PAUSED" else "#ffbc71" if self.mode == "ERROR" else ACCENT)
+        color = QColor("#698d9c" if self.mode == "PAUSED" else "#ffc36e" if self.mode == "ERROR" else ACCENT)
         phase = self.phase * (1.7 if thinking else 1)
         glow = QRadialGradient(0, 0, 164)
         center = QColor(color)
         center.setAlpha(65 if active else 30)
         glow.setColorAt(0, center)
-        glow.setColorAt(.55, QColor(20, 116, 158, 15))
+        glow.setColorAt(.55, QColor(14, 152, 178, 22))
         glow.setColorAt(1, QColor(0, 0, 0, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(glow)
@@ -174,7 +183,7 @@ class VoiceOrb(QWidget):
             p.drawEllipse(QPointF(0, 0), radius, radius)
         for i in range(72):
             angle = i*math.tau/72
-            p.setPen(QPen(QColor(0, 122, 255, 45 if i % 6 else 75), 1 if i % 6 else 1.5))
+            p.setPen(QPen(QColor(45, 205, 233, 45 if i % 6 else 90), 1 if i % 6 else 1.5))
             inner = 152 if i % 6 else 147
             p.drawLine(QPointF(math.cos(angle)*inner, math.sin(angle)*inner),
                        QPointF(math.cos(angle)*156, math.sin(angle)*156))
@@ -198,7 +207,7 @@ class VoiceOrb(QWidget):
         triangle.lineTo(34, -24)
         triangle.lineTo(0, 37)
         triangle.closeSubpath()
-        p.setBrush(QColor(0, 122, 255, 18+int(12*(1+math.sin(phase*3)))))
+        p.setBrush(QColor(66, 221, 255, 18+int(12*(1+math.sin(phase*3)))))
         p.drawPath(triangle)
         p.setPen(QPen(color, 1))
         p.setBrush(Qt.BrushStyle.NoBrush)

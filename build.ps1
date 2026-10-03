@@ -20,8 +20,7 @@ $jarvisBuildArgs = @(
     '--collect-all', 'faster_whisper', '--collect-all', 'ctranslate2',
     '--collect-all', 'edge_tts', '--collect-all', 'sounddevice',
     '--collect-all', 'soundfile', '--collect-all', 'openwakeword',
-    '--collect-all', 'onnxruntime', '--collect-all', 'google.genai',
-    '--copy-metadata', 'google-genai', '--hidden-import', 'keyboard',
+    '--collect-all', 'onnxruntime', '--hidden-import', 'keyboard',
     '--add-data', '.cache\whisper;.cache\whisper'
 )
 # Build into a fresh folder. PyInstaller's in-place cleanup can fail on

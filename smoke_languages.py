@@ -1,4 +1,4 @@
-"""Verify real Hindi/English recognition, Gemini language switching and speech."""
+"""Verify real Hindi/English recognition, Groq language switching and speech."""
 import json
 import re
 
@@ -33,11 +33,11 @@ def main():
             assert engine.submit_text(transcript)
             engine.process_pending_wake()
             answer = engine.context.last_assistant()
-            assert answer, "No Gemini answer"
-            assert bool(re.search(r"[\u0900-\u097f]", answer)) == (lang == "hi"), "Gemini replied in the wrong language"
+            assert answer, "No Groq answer"
+            assert bool(re.search(r"[\u0900-\u097f]", answer)) == (lang == "hi"), "Groq replied in the wrong language"
             result["checks"].append({"input_language": lang, "recognized_language": engine.stt.last_language,
                                      "recognized": transcript, "reply": answer})
-            print(f"PASS: {lang} recognition, Gemini reply and voice", flush=True)
+            print(f"PASS: {lang} recognition, Groq reply and voice", flush=True)
         engine.submit_text("yaar Python kya hai, ek line mein batao")
         engine.process_pending_wake()
         assert re.search(r"[\u0900-\u097f]", engine.context.last_assistant()), "Roman Hinglish did not get Hindi speech text"

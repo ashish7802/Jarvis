@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from app.ai.base import ChatMessage
-from app.ai.gemini_provider import GeminiProvider
+from app.ai.groq_provider import GroqProvider
 from app.tts.service import TTSService
 from app.wakeword import detector
 
@@ -20,26 +20,46 @@ def test_tts_synthesis_failure_is_not_success(monkeypatch, tmp_path):
     assert tts.speak("Hello.") is False
 
 
-def test_gemini_preserves_history_and_system_instruction():
+def test_groq_preserves_history_and_system_instruction(monkeypatch):
     calls = []
-    def generate_content(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(text=" Ready. ")
-    provider = GeminiProvider.__new__(GeminiProvider)
     import threading
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": " Ready. "}}]}
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def post(self, url, *, json):
+            calls.append(json)
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("app.ai.groq_provider.httpx.Client", Client)
+    provider = GroqProvider.__new__(GroqProvider)
     provider._cancelled = threading.Event()
     provider.turn_cancelled = threading.Event()
     provider.max_attempts = 2
-    provider._client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
-    provider._model_name = "test-model"
+    provider._client = Client()
+    provider._model = "test-model"
     answer = provider.chat([
         ChatMessage("system", "Be concise."), ChatMessage("user", "Hello"),
         ChatMessage("assistant", "Hi"), ChatMessage("user", "Ready?"),
     ])
     assert answer == "Ready."
-    assert calls[0]["config"]["system_instruction"] == "Be concise."
-    assert [m["role"] for m in calls[0]["contents"]] == ["user", "model", "user"]
-    assert calls[0]["contents"][-1]["parts"] == [{"text": "Ready?"}]
+    assert calls[0]["messages"] == [
+        {"role": "system", "content": "Be concise."},
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi"},
+        {"role": "user", "content": "Ready?"},
+    ]
 
 
 def test_check_fails_when_stt_cannot_load(monkeypatch):
@@ -57,5 +77,5 @@ def test_packaged_env_is_next_to_executable(monkeypatch, tmp_path):
     monkeypatch.delenv("JARVIS_ENV_FILE")
     monkeypatch.setattr(config.sys, "frozen", True, raising=False)
     monkeypatch.setattr(config.sys, "executable", str(tmp_path / "JARVIS.exe"))
-    (tmp_path / ".env").write_text("AI_PROVIDER=gemini\n")
+    (tmp_path / ".env").write_text("AI_PROVIDER=groq\n")
     assert config._resolve_env_file() == str(tmp_path / ".env")

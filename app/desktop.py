@@ -15,9 +15,23 @@ import sys
 
 from PySide6.QtCore import Qt, QSettings, QTimer, Slot
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QMainWindow, QMenu
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
-from app.hud_widgets import STYLE, VoiceOrb, app_icon
+from app.hud_widgets import STYLE, HudBackground, VoiceOrb, app_icon
 from app.desktop_worker import AssistantWorker
 
 
@@ -32,7 +46,7 @@ BUSY_STATES = {
 }
 STATE_HINTS = {
     "STARTING": "Starting Jarvis…",
-    "STANDBY": "Click to talk · drag to move · right-click for options",
+    "STANDBY": "Click the core or press Ctrl+Space to talk",
     "WAKE_DETECTED": "I’m listening",
     "ACKNOWLEDGING": "I’m listening",
     "LISTENING": "Say anything",
@@ -46,7 +60,7 @@ STATE_HINTS = {
 
 
 class JarvisWindow(QMainWindow):
-    """A small always-on-top voice orb with no persistent dashboard UI."""
+    """Native assistant console with voice, conversation, and system controls."""
 
     def __init__(self, factory, *, autostart=True, preferences=None):
         super().__init__()
@@ -66,19 +80,16 @@ class JarvisWindow(QMainWindow):
         self.screen_read_enabled = self.preferences.value(
             "screen_read_enabled", False, type=bool
         )
+        self.language_mode = self.preferences.value("language_mode", "auto")
+        self.ai_provider = "Connecting…"
 
         self.setWindowTitle(TITLE)
         self.setWindowIcon(app_icon())
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
-            | Qt.WindowType.WindowStaysOnTopHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(180, 180)
+        self.resize(1360, 850)
+        self.setMinimumSize(1120, 700)
         self.setStyleSheet(STYLE)
         self._build_ui()
-        self._place_orb()
+        self._place_window()
 
         self.talk_shortcut = QShortcut(QKeySequence("Ctrl+Space"), self)
         self.talk_shortcut.activated.connect(self._listen)
@@ -88,22 +99,202 @@ class JarvisWindow(QMainWindow):
             QTimer.singleShot(0, self.start_assistant)
 
     def _build_ui(self):
+        surface = HudBackground(self)
+        surface.setObjectName("surface")
+        self.setCentralWidget(surface)
+        root = QVBoxLayout(surface)
+        root.setContentsMargins(28, 22, 28, 24)
+        root.setSpacing(18)
+
+        topbar = QHBoxLayout()
+        topbar.setSpacing(14)
+        brand_column = QVBoxLayout()
+        brand_column.setSpacing(2)
+        brand = QLabel("JARVIS")
+        brand.setObjectName("brand")
+        brand_column.addWidget(brand)
+        tagline = QLabel("PERSONAL INTELLIGENCE  /  VOICE CONSOLE")
+        tagline.setObjectName("eyebrow")
+        brand_column.addWidget(tagline)
+        topbar.addLayout(brand_column)
+        topbar.addStretch(1)
+        self.status_badge = QLabel("●  STARTING SYSTEM")
+        self.status_badge.setObjectName("statusBadge")
+        topbar.addWidget(self.status_badge)
+        root.addLayout(topbar)
+
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        root.addLayout(body, 1)
+
+        self.system_panel = QFrame()
+        self.system_panel.setObjectName("panel")
+        self.system_panel.setFixedWidth(252)
+        system_layout = QVBoxLayout(self.system_panel)
+        system_layout.setContentsMargins(18, 18, 18, 18)
+        system_layout.setSpacing(13)
+        system_title = QLabel("SYSTEM STATUS")
+        system_title.setObjectName("eyebrow")
+        system_layout.addWidget(system_title)
+        self.provider_value = self._add_status_row(system_layout, "AI LINK", self.ai_provider)
+        self.wake_value = self._add_status_row(system_layout, "WAKE WORD", "Loading…")
+        self.mic_value = self._add_status_row(system_layout, "MICROPHONE", "Checking…")
+        system_layout.addSpacing(8)
+        self.voice_toggle = QCheckBox("Spoken replies")
+        self.voice_toggle.setChecked(self.voice_enabled)
+        self.voice_toggle.toggled.connect(self._toggle_voice)
+        system_layout.addWidget(self.voice_toggle)
+        self.screen_read_toggle = QCheckBox("Allow screen reading")
+        self.screen_read_toggle.setChecked(self.screen_read_enabled)
+        self.screen_read_toggle.toggled.connect(self._toggle_screen_read)
+        system_layout.addWidget(self.screen_read_toggle)
+        system_layout.addWidget(self._small_label("Language"))
+        self.language_combo = QComboBox()
+        for label, value in (("Auto detect", "auto"), ("English", "en"),
+                             ("Hindi", "hi"), ("Hinglish", "hinglish")):
+            self.language_combo.addItem(label, value)
+        language_index = self.language_combo.findData(self.language_mode)
+        self.language_combo.setCurrentIndex(max(0, language_index))
+        self.language_combo.currentIndexChanged.connect(self._language_changed)
+        system_layout.addWidget(self.language_combo)
+        self.pause_button = QPushButton("Pause microphone")
+        self.pause_button.clicked.connect(self._toggle_pause)
+        system_layout.addWidget(self.pause_button)
+        system_layout.addStretch(1)
+        capabilities_title = QLabel("READY FOR")
+        capabilities_title.setObjectName("eyebrow")
+        system_layout.addWidget(capabilities_title)
+        for capability in ("Natural conversation", "Reminders & notes", "Safe desktop actions"):
+            item = QLabel("◦  " + capability)
+            item.setObjectName("muted")
+            system_layout.addWidget(item)
+        self.logs_button = QPushButton("Open diagnostic logs")
+        self.logs_button.setObjectName("quiet")
+        self.logs_button.clicked.connect(self._open_logs)
+        system_layout.addWidget(self.logs_button)
+        body.addWidget(self.system_panel)
+
+        conversation_panel = QFrame()
+        conversation_panel.setObjectName("panel")
+        conversation_layout = QVBoxLayout(conversation_panel)
+        conversation_layout.setContentsMargins(18, 18, 18, 18)
+        conversation_layout.setSpacing(12)
+        conversation_header = QHBoxLayout()
+        conversation_title = QLabel("CONVERSATION")
+        conversation_title.setObjectName("eyebrow")
+        conversation_header.addWidget(conversation_title)
+        conversation_header.addStretch(1)
+        clear_button = QPushButton("Clear")
+        clear_button.setObjectName("quiet")
+        clear_button.clicked.connect(self._clear_conversation)
+        conversation_header.addWidget(clear_button)
+        conversation_layout.addLayout(conversation_header)
+        self.notice_label = QLabel()
+        self.notice_label.setObjectName("notice")
+        self.notice_label.setWordWrap(True)
+        self.notice_label.hide()
+        conversation_layout.addWidget(self.notice_label)
+        self.message_scroll = QScrollArea()
+        self.message_scroll.setWidgetResizable(True)
+        self.message_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.message_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.messages_widget = QWidget()
+        self.messages_widget.setObjectName("messages")
+        self.messages_layout = QVBoxLayout(self.messages_widget)
+        self.messages_layout.setContentsMargins(4, 6, 8, 6)
+        self.messages_layout.setSpacing(10)
+        self.messages_layout.addStretch(1)
+        self.message_scroll.setWidget(self.messages_widget)
+        conversation_layout.addWidget(self.message_scroll, 1)
+        self._append_message(
+            "assistant", "I'm online. Ask me anything, or use the voice control to speak."
+        )
+        input_row = QHBoxLayout()
+        input_row.setSpacing(9)
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Ask Jarvis anything…")
+        self.input.returnPressed.connect(self._send_text)
+        input_row.addWidget(self.input, 1)
+        self.send_button = QPushButton("Send")
+        self.send_button.setObjectName("primary")
+        self.send_button.clicked.connect(self._send_text)
+        input_row.addWidget(self.send_button)
+        conversation_layout.addLayout(input_row)
+        body.addWidget(conversation_panel, 1)
+
+        core_panel = QFrame()
+        core_panel.setObjectName("panel")
+        core_panel.setFixedWidth(310)
+        core_layout = QVBoxLayout(core_panel)
+        core_layout.setContentsMargins(18, 18, 18, 18)
+        core_layout.setSpacing(10)
+        core_title = QLabel("ASSISTANT CORE")
+        core_title.setObjectName("eyebrow")
+        core_layout.addWidget(core_title)
         self.orb = VoiceOrb(self)
-        self.orb.setFixedSize(170, 170)
+        self.orb.setFixedSize(270, 270)
+        self.orb.draggable = False
         self.orb.activated.connect(self._listen)
         self.orb.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.orb.customContextMenuRequested.connect(
             lambda point: self._show_menu(self.orb.mapToGlobal(point))
         )
-        self.setCentralWidget(self.orb)
+        core_layout.addWidget(self.orb, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.core_state_label = QLabel("Starting Jarvis…")
+        self.core_state_label.setObjectName("heroTitle")
+        self.core_state_label.setWordWrap(True)
+        self.core_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        core_layout.addWidget(self.core_state_label)
+        self.core_hint_label = QLabel("VOICE CORE  ·  READY")
+        self.core_hint_label.setObjectName("muted")
+        self.core_hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        core_layout.addWidget(self.core_hint_label)
+        core_layout.addSpacing(6)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.talk_button = QPushButton("Start talking")
+        self.talk_button.setObjectName("primary")
+        self.talk_button.clicked.connect(self._listen)
+        actions.addWidget(self.talk_button, 1)
+        self.cancel_button = QPushButton("Stop")
+        self.cancel_button.setObjectName("quiet")
+        self.cancel_button.clicked.connect(self._cancel_turn)
+        actions.addWidget(self.cancel_button)
+        core_layout.addLayout(actions)
+        shortcut = QLabel("CTRL + SPACE  TALK     ·     ESC  STOP")
+        shortcut.setObjectName("eyebrow")
+        shortcut.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        core_layout.addWidget(shortcut)
+        core_layout.addStretch(1)
+        body.addWidget(core_panel)
         self._refresh_state()
 
-    def _place_orb(self):
+    @staticmethod
+    def _small_label(text):
+        label = QLabel(text)
+        label.setObjectName("muted")
+        return label
+
+    @staticmethod
+    def _add_status_row(layout, title, value):
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        label = QLabel(title)
+        label.setObjectName("eyebrow")
+        value_label = QLabel(value)
+        value_label.setObjectName("muted")
+        value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(label, 1)
+        row.addWidget(value_label)
+        layout.addLayout(row)
+        return value_label
+
+    def _place_window(self):
         screen = QApplication.primaryScreen()
         if screen is None:
             return
         area = screen.availableGeometry()
-        self.move(area.right() - self.width() - 28, area.top() + 64)
+        self.move(area.center() - self.rect().center())
 
     def _show_menu(self, position):
         menu = QMenu(self)
@@ -192,29 +383,45 @@ class JarvisWindow(QMainWindow):
             self.orb.update()
         elif event == "microphone":
             self.microphone_connected = bool(payload)
+            self.mic_value.setText("Connected" if payload else "Disconnected")
             self._refresh_state()
         elif event == "progress":
-            self.orb.setToolTip(str(payload))
+            self.core_hint_label.setText(str(payload).upper())
         elif event == "notice":
-            self.orb.setToolTip(str(payload))
+            self.notice_label.setText(str(payload))
+            self.notice_label.show()
         elif event == "fatal":
             self.failed = True
             self.current_state = "ERROR"
-            self.orb.setToolTip(str(payload))
-            self._refresh_state()
-        elif event == "listening":
-            self.paused = not payload
-            self.pause_pending = False
-            if self.paused:
-                self.orb.audio_level = 0
+            self.notice_label.setText(str(payload))
+            self.notice_label.show()
             self._refresh_state()
         elif event == "configured":
             self.logs_dir = Path(payload["logs"])
             self.wake_backend = payload["wake"]
+            self.ai_provider = payload["provider"]
+            self.provider_value.setText(self.ai_provider.upper())
+            self.wake_value.setText(self.wake_backend.replace("_", " ").title())
+            if self.wake_backend == "disabled":
+                self.mic_value.setText("Click-to-talk")
+            self._refresh_state()
+        elif event == "message":
+            self._append_message(payload.get("role", "assistant"), payload.get("text", ""))
+        elif event == "clear":
+            self._clear_messages()
+        elif event == "listening":
+            self.paused = not payload
+            self.pause_pending = False
+            self.pause_button.setText("Resume microphone" if self.paused else "Pause microphone")
+            if self.paused:
+                self.orb.audio_level = 0
             self._refresh_state()
         elif event == "screen_read":
             self.screen_read_enabled = bool(payload)
             self.preferences.setValue("screen_read_enabled", self.screen_read_enabled)
+            self.screen_read_toggle.blockSignals(True)
+            self.screen_read_toggle.setChecked(self.screen_read_enabled)
+            self.screen_read_toggle.blockSignals(False)
 
     def _refresh_state(self):
         mode = "SHUTTING_DOWN" if self.closing else self.current_state
@@ -223,16 +430,102 @@ class JarvisWindow(QMainWindow):
         if mode == "STANDBY" and self.microphone_connected is False:
             hint = "Microphone disconnected · right-click to retry or quit"
         elif mode == "STANDBY" and self.wake_backend == "disabled":
-            hint = "Click to talk · right-click for options"
+            hint = "Click the core or press Ctrl+Space to talk"
         else:
             hint = STATE_HINTS.get(mode, "Jarvis")
         self.orb.mode = mode
-        self.orb.setAccessibleName(
-            "Stop current Jarvis turn"
-            if mode in BUSY_STATES
-            else "Talk to Jarvis"
-        )
+        self.orb.setAccessibleName("Stop current Jarvis turn" if mode in BUSY_STATES else "Talk to Jarvis")
         self.orb.setToolTip(hint)
+        self.core_state_label.setText(hint)
+        self.core_hint_label.setText(
+            "VOICE CORE  ·  " + ("PAUSED" if self.paused else mode.replace("_", " "))
+        )
+        self.status_badge.setText("●  " + mode.replace("_", " "))
+        self.talk_button.setText(
+            "Stop this turn" if mode in BUSY_STATES
+            else "Resume microphone" if self.paused
+            else "Start talking"
+        )
+        self.talk_button.setEnabled(
+            mode in BUSY_STATES or mode in ("STANDBY", "PAUSED")
+        )
+        self.cancel_button.setEnabled(mode in BUSY_STATES and not self.cancelling)
+        self.pause_button.setText("Resume microphone" if self.paused else "Pause microphone")
+        self.pause_button.setEnabled(
+            mode in ("STANDBY", "PAUSED")
+            and not self.pause_pending and not self.closing and not self.failed
+        )
+        self.screen_read_toggle.setEnabled(
+            mode == "STANDBY" and not self.closing and not self.failed
+        )
+        self.send_button.setEnabled(mode == "STANDBY" and not self.closing and not self.failed)
+        self.language_combo.setEnabled(mode == "STANDBY" and not self.closing and not self.failed)
+        self.orb.update()
+
+    def _append_message(self, role, text):
+        if not text:
+            return
+        self.messages_layout.takeAt(self.messages_layout.count() - 1)
+        card = QFrame()
+        card.setObjectName("userBubble" if role == "user" else "assistantBubble")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(13, 9, 13, 10)
+        layout.setSpacing(4)
+        author = QLabel("YOU" if role == "user" else "JARVIS")
+        author.setObjectName("eyebrow")
+        layout.addWidget(author)
+        message = QLabel(str(text))
+        message.setObjectName("message")
+        message.setWordWrap(True)
+        message.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(message)
+        self.messages_layout.addWidget(card)
+        self.messages_layout.addStretch(1)
+        QTimer.singleShot(
+            0,
+            lambda: self.message_scroll.verticalScrollBar().setValue(
+                self.message_scroll.verticalScrollBar().maximum()
+            ),
+        )
+
+    def _clear_messages(self):
+        while self.messages_layout.count():
+            item = self.messages_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.messages_layout.addStretch(1)
+
+    def _send_text(self):
+        text = self.input.text().strip()
+        if not text:
+            return
+        if self.worker is not None and self.worker.submit(text):
+            self.input.clear()
+            self.notice_label.hide()
+        else:
+            self.notice_label.setText("Jarvis is busy or still starting. Try again when the core is ready.")
+            self.notice_label.show()
+
+    def _clear_conversation(self):
+        if self.worker is not None and not self.worker.clear():
+            self.notice_label.setText("Conversation can be cleared when Jarvis is ready.")
+            self.notice_label.show()
+
+    def _language_changed(self, index):
+        mode = self.language_combo.itemData(index)
+        if mode == self.language_mode:
+            return
+        if self.worker is not None and self.worker.set_language_mode(mode):
+            self.language_mode = mode
+            self.preferences.setValue("language_mode", mode)
+        else:
+            previous = self.language_combo.findData(self.language_mode)
+            self.language_combo.blockSignals(True)
+            self.language_combo.setCurrentIndex(max(0, previous))
+            self.language_combo.blockSignals(False)
+            self.notice_label.setText("Language can be changed when Jarvis is ready.")
+            self.notice_label.show()
         self.orb.update()
 
     def _listen(self):
@@ -258,6 +551,10 @@ class JarvisWindow(QMainWindow):
     def _toggle_voice(self, enabled):
         self.voice_enabled = bool(enabled)
         self.preferences.setValue("spoken_replies", self.voice_enabled)
+        if self.voice_toggle.isChecked() != self.voice_enabled:
+            self.voice_toggle.blockSignals(True)
+            self.voice_toggle.setChecked(self.voice_enabled)
+            self.voice_toggle.blockSignals(False)
         if self.worker is not None:
             self.worker.set_voice(self.voice_enabled)
 
@@ -270,6 +567,9 @@ class JarvisWindow(QMainWindow):
             self.screen_read_enabled = bool(
                 getattr(self.worker.engine, "screen_read_enabled", False)
             )
+        self.screen_read_toggle.blockSignals(True)
+        self.screen_read_toggle.setChecked(self.screen_read_enabled)
+        self.screen_read_toggle.blockSignals(False)
 
     def _open_logs(self):
         self.logs_dir.mkdir(parents=True, exist_ok=True)

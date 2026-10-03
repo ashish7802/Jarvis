@@ -81,4 +81,4 @@ def calculation_reply(text):
     except ZeroDivisionError:
         return "That calculation is undefined; you can't divide by zero."
     except (SyntaxError, ValueError, DecimalException):
-        return None  # A natural-language or advanced question belongs to Gemini.
+        return None  # A natural-language or advanced question belongs to the chat provider.

@@ -2,15 +2,19 @@
 
 A Windows-native, voice-first personal assistant.
 
-### Animated desktop HUD
+### Holographic desktop console
 
-JARVIS now opens as a native Qt desktop app with a cyan, animated reactor and
-a minimal HUD. There is no browser, local website, or web view. The core changes
-its motion while listening, understanding, thinking and replying.
+JARVIS opens as a native Qt desktop app with an original, dark-blue holographic
+console: a live assistant core, conversation panel, system status, language
+selection, and voice/privacy controls. It does not reproduce any film interface.
+There is no browser, local website, or web view. The core changes its motion
+while listening, understanding, thinking and replying.
 
-- Click the small orb or press **Ctrl+Space** and speak naturally. Jarvis starts
+- Click **Start talking**, the assistant core, or press **Ctrl+Space** and speak
+  naturally. Jarvis starts
   recording immediately instead of speaking an acknowledgement over your first
-  words. You can also say **"hey Jarvis"** when the local wake word is enabled.
+  words. You can also type a message in the conversation panel or say
+  **"hey Jarvis"** when the local wake word is enabled.
 - **Soft voice** mode is the default: a noise-relative recording threshold,
   450 ms onset buffer and capped amplification help capture quieter questions.
   Exact commands **"soft voice mode"**, **"balanced mode"** and **"noisy room
@@ -45,12 +49,19 @@ its motion while listening, understanding, thinking and replying.
   Short small talk stays short; follow-ups and light humor are used when helpful,
   without repeating "Sir" or "yaar" in every answer. You can explicitly request
   formal or pure Hindi. The assistant remains honest about being an AI.
-- The desktop surface is intentionally voice-only: there is no chat window,
-  settings panel, or text box. Drag the orb to move it; right-click it for
-  pause/resume, voice replies, diagnostic logs, and quit.
+- Ordinary conversation is welcome; you do not need to phrase everything as a
+  command. A wake phrase or orb click starts listening, but if a sentence sounds
+  clearly meant for someone else Jarvis won't answer on their behalf. If it
+  genuinely can't tell who you meant, it asks a quick, friendly clarification.
+- The console shows the current conversation, assistant state, AI/wake-word/
+  microphone status, and diagnostics. Spoken replies, microphone pause, and
+  screen-reading opt-in are available as visible controls; right-click the
+  assistant core for the same recovery and quit actions.
 - If Jarvis cannot understand a sentence, it asks you to say it another way.
   Its conversation prompt follows context, understands Hindi/Hinglish/English,
-  and asks one focused clarification instead of guessing when needed.
+  and asks one focused clarification instead of guessing when needed. Open-ended
+  answers require a Groq API key; mock mode only has a few
+  built-in demo replies.
 - **Local desktop actions** can open built-in Windows tools, apps with a Start
   Menu shortcut, and normal HTTP(S) websites after a direct voice request such
   as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
@@ -87,7 +98,7 @@ checks establish recognition accuracy for every person's voice.
 `python smoke_hearing.py` checks quiet synthetic questions through the recorder
 and real Whisper, a wake phrase at one tenth amplitude, and stationary noise.
 It saves a `hearing-check.json` result and removes its synthesized audio files.
-`python smoke_languages.py` checks real Hindi/English recognition, Gemini replies,
+`python smoke_languages.py` checks real Hindi/English recognition, Groq replies,
 spoken playback and Roman Hinglish handling using synthetic sample questions.
 `python smoke_style.py` generates real casual conversation samples, plays Hindi
 and English replies, and saves `style-check.json` for tone review.
@@ -101,7 +112,7 @@ The explicit `energy` backend and the legacy headless fallback remain available.
 - Basic arithmetic and percentages use a bounded local calculator, rather than
   relying on generated answers. Try **"what is 17 times 23"**, **"calculate 0.1
   plus 0.2"**, or **"what is 12.5 percent of 240"**. Division by zero produces a
-  clear explanation; unsupported calculations go to Gemini. These answers,
+  clear explanation; unsupported calculations go to Groq. These answers,
   time, and date stay in context for **"repeat that"** and follow-up questions.
 - She gives spoken feedback when no question was heard, recognition fails, or
   the microphone cannot be accessed. The next wake request is preserved even
@@ -113,7 +124,7 @@ The explicit `energy` backend and the legacy headless fallback remain available.
   use the phrase cache. The launcher checks the same executable it starts.
 - Uses follow-up context and concise spoken answers, and acknowledges when
   current information cannot be verified. Conversation memory keeps complete
-  exchanges (up to 31 messages by default) and excludes failed Gemini requests.
+  exchanges (up to 31 messages by default) and excludes failed Groq requests.
 - Say **"repeat that"**, **"clear conversation"**, **"what time is it"**, or
   **"what's today's date"** after the wake-word acknowledgement. Time and date
   come from the PC's clock. Memory lasts for this running session only.
@@ -125,7 +136,7 @@ The explicit `energy` backend and the legacy headless fallback remain available.
   on the model and recording quality.
 - The microphone thread no longer blocks on conversation processing. Detection
   resets after playback and reconnects after microphone interruptions.
-- Temporary Gemini connection/server errors retry once, with a 15-second
+- Temporary Groq connection/server errors retry once, with a 15-second
   timeout per attempt. Authentication/model/quota errors give specific spoken
   guidance, and cancelled requests cannot produce a late spoken reply.
 - TTS retries synthesis once, cancels outstanding work on shutdown, removes
@@ -141,10 +152,11 @@ the implementation and the real audio/AI pipeline respectively.
 ### Quick start on this computer
 
 The local virtual environment, speech models, and app-local C++ runtime are
-configured. Gemini uses the `google-genai` SDK and `gemini-3.6-flash`.
+configured. Set a Groq API key to enable live, open-ended conversation.
 
-1. Keep your Gemini API key in `.env` as `GEMINI_API_KEY=...`, with
-   `AI_PROVIDER=gemini` and `AI_MODEL=gemini-3.6-flash`.
+1. Keep your Groq API key in `.env` as `GROQ_API_KEY=...`. The app selects Groq
+   automatically; optionally set `AI_PROVIDER=groq` and choose an available
+   Groq model in `AI_MODEL`.
 2. Double-click `start_jarvis.bat`. The HUD opens and displays initialization
    progress. After running `install_desktop.ps1`, it opens at sign-in and unlock automatically.
 3. After the greeting, say **"hey Jarvis"**, wait for **"हाँ, बोलो"** or **"Yeah, I'm here"**, then
@@ -153,7 +165,6 @@ configured. Gemini uses the `google-genai` SDK and `gemini-3.6-flash`.
 Useful checks from the project folder:
 
 ```bat
-.venv\Scripts\python.exe -m app.check_gemini
 .venv\Scripts\python.exe -m app.main --check
 .venv\Scripts\python.exe smoke_pipeline.py
 .venv\Scripts\python.exe smoke_conversation.py
@@ -162,7 +173,7 @@ Useful checks from the project folder:
 `smoke_pipeline.py` briefly checks microphone access, then uses synthesized
 test speech to verify wake detection and Whisper before requesting and
 playing an AI reply. It does not verify recognition of your particular voice.
-`smoke_conversation.py` verifies that the real Gemini provider remembers a
+`smoke_conversation.py` verifies that the real Groq provider remembers a
 synthetic project codename from a previous turn, without using personal data.
 
 For a fresh clone, install the dependencies and run `python -m app.setup_models`
@@ -187,7 +198,7 @@ JARVIS.exe (Windows GUI subsystem, no console)
    └─ AssistantEngine (single thread + wake-word background thread)
         ├─ Wake Word (openWakeWord local, with energy-gate fallback)
         ├─ STT (faster-whisper, local)
-        ├─ AI (provider abstraction: openai | gemini | mock)
+        ├─ AI (Groq chat completions, with offline mock mode)
         └─ TTS (edge-tts, Microsoft cloud, plays locally)
 ```
 
@@ -249,10 +260,11 @@ Key values:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `AI_PROVIDER` | `mock` | `openai`, `gemini`, or `mock` |
-| `AI_MODEL` | (provider default) | e.g. `gpt-4o-mini`, `gemini-3.6-flash` |
-| `OPENAI_API_KEY` | _empty_ | Required when `AI_PROVIDER=openai` |
-| `GEMINI_API_KEY` | _empty_ | Required when `AI_PROVIDER=gemini` |
+| `AI_PROVIDER` | `mock` | `groq` or `mock`; a Groq key auto-selects `groq` |
+| `AI_MODEL` | `llama-3.3-70b-versatile` | An available Groq model |
+| `GROQ_API_KEY` | _empty_ | Enables Groq chat; keep the key in your local `.env` |
+| `AI_REQUEST_TIMEOUT` | `15` | Timeout per Groq request, in seconds |
+| `AI_MAX_ATTEMPTS` | `2` | Maximum Groq request attempts |
 | `TTS_PROVIDER` | `edge` | `edge` or `mock` |
 | `TTS_VOICE` | `en-US-GuyNeural` | Any edge-tts voice id |
 | `WAKE_WORD_ENABLED` | `true` | Disable to skip wake-word detection |
@@ -273,18 +285,16 @@ Key values:
 
 ## AI Provider
 
-JARVIS supports three providers:
+JARVIS supports Groq chat and an offline demo mode:
 
-- **`mock`** — offline canned answers, useful for testing the pipeline
-  without an API key.
-- **`openai`** — requires `OPENAI_API_KEY`. Uses the OpenAI Chat
-  Completions API.
-- **`gemini`** — requires `GEMINI_API_KEY`. Uses the Google Gen
-  AI SDK.
+- **`groq`** — uses Groq's chat-completions API. Requires `GROQ_API_KEY`;
+  the default model is `llama-3.3-70b-versatile`.
+- **`mock`** — offline canned answers, useful for testing the voice pipeline
+  without a key. Adding `GROQ_API_KEY` automatically enables Groq even when
+  `AI_PROVIDER=mock`.
 
-Set `AI_PROVIDER` to the one you want. JARVIS does **not** silently
-fall back if a key is missing — the failure surfaces so the user can
-fix configuration.
+JARVIS does **not** silently fall back to mock mode when Groq is explicitly
+selected but its key is missing; the configuration error is surfaced.
 
 ---
 
@@ -461,9 +471,9 @@ keeps the previous installation as a backup, and adds a Start menu shortcut.
   `OPENWAKEWORD_THRESHOLD`. For the legacy Porcupine backend, set
   `WAKEWORD_BACKEND=porcupine`, `pip install pvporcupine`, and set
   `PORCUPINE_ACCESS_KEY`.
-- **API key missing / invalid** — startup will surface the
-  configuration error in `logs/jarvis.log`. Set the correct key in
-  `.env` for the provider you chose in `AI_PROVIDER`.
+- **Groq API key missing / invalid** — startup will surface the
+  configuration error in `logs/jarvis.log`. Set `GROQ_API_KEY` in your
+  local `.env`; never commit API keys to the project.
 - **Network unavailable** — TTS (edge-tts) requires internet.
   Commands still work locally for STT and wake-word, but spoken
   replies will fail.

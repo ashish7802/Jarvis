@@ -158,6 +158,17 @@ def test_engine_happy_path():
     assert "what is Python" in eng.context.messages()[-2].content
 
 
+def test_ai_prompt_supports_open_conversation_and_addressee_clarification():
+    eng = _make_engine()
+    eng.startup()
+    eng.submit_text("How was your day?")
+    eng.process_pending_wake()
+    system_prompt = eng.ai.calls[-1][0].content
+    assert "open-ended conversation on any topic" in system_prompt
+    assert "does not prove every captured sentence is meant for you" in system_prompt
+    assert "ask one brief, friendly clarification" in system_prompt
+
+
 def test_engine_no_speech_returns_to_standby():
     eng = _make_engine(recorder=FakeRecorder(audio=None))
     eng.startup()

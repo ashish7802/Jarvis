@@ -26,7 +26,6 @@ WEBSITE_ALIASES = {
     "youtube": ("https://www.youtube.com", "YouTube"),
     "github": ("https://github.com", "GitHub"),
     "gmail": ("https://mail.google.com", "Gmail"),
-    "chatgpt": ("https://chatgpt.com", "ChatGPT"),
     "wikipedia": ("https://www.wikipedia.org", "Wikipedia"),
 }
 

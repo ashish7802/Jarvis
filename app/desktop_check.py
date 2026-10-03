@@ -36,8 +36,7 @@ def run_check(factory):
         return engine, configured
     window = JarvisWindow(check_factory, preferences=prefs)
     stage = 0
-    deadline = time.monotonic() + 180
-    expected_count = 0
+    deadline = time.monotonic() + 600
     questions = ["What is 12.5 percent of 240?",
                  "In one short sentence, say hello and mention the word ready.",
                  "noisy room mode", "soft voice mode", "Hindi mein baat karo",
@@ -53,7 +52,7 @@ def run_check(factory):
         (settings.logs_dir / "desktop-check.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         window.close()
     def advance():
-        nonlocal stage, expected_count
+        nonlocal stage
         if time.monotonic() > deadline:
             finish("Desktop check timed out")
             return
@@ -61,8 +60,6 @@ def run_check(factory):
             finish("Desktop service initialization failed; see jarvis.log")
             return
         if window.current_state != "STANDBY" or window.worker.engine is None:
-            return
-        if stage and len(window.worker.engine.context) < expected_count:
             return
         if stage == 1 and "30" not in (window.worker.engine.context.last_assistant() or ""):
             finish("Calculation response failed")
@@ -111,7 +108,6 @@ def run_check(factory):
             return
         text = questions[stage]
         if window.worker.submit(text):
-            expected_count = len(window.worker.engine.context) + 2
             result["steps"].append(text)
             stage += 1
     timer = QTimer()

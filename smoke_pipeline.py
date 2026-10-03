@@ -1,4 +1,4 @@
-"""Check real mic access, wake inference, Whisper, Gemini, and speaker playback.
+"""Check real mic access, wake inference, Whisper, Groq, and speaker playback.
 
 Uses synthesized test speech for repeatable recognition checks. Does not save
 microphone recordings. Run with the project's virtual-environment Python.
@@ -59,8 +59,10 @@ def main():
         assert fired, "Wake model did not detect the synthesized 'hey Jarvis'"
         print("Wake-word detection OK.", flush=True)
 
-        ai = build_provider(settings.ai_provider, gemini_key=settings.gemini_api_key,
-                            openai_key=settings.openai_api_key, model=settings.ai_model)
+        provider = "groq" if settings.ai_provider == "mock" and settings.groq_api_key else settings.ai_provider
+        ai = build_provider(provider, groq_key=settings.groq_api_key, model=settings.ai_model,
+                            request_timeout=settings.ai_request_timeout,
+                            max_attempts=settings.ai_max_attempts)
         reply = ai.chat([ChatMessage("system", "Answer in one short sentence."), ChatMessage("user", text)])
         assert reply and "trouble reaching" not in reply, "AI request failed"
         print("AI reply:", reply, flush=True)

@@ -29,6 +29,10 @@ def test_happy_path_transitions():
         assert can_transition(a, b), f"{a} -> {b} should be allowed"
 
 
+def test_wake_with_prebuffered_audio_can_transcribe():
+    assert can_transition(State.WAKE_DETECTED, State.TRANSCRIBING)
+
+
 def test_illegal_transitions_rejected():
     with pytest.raises(IllegalTransition):
         assert_transition(State.STANDBY, State.THINKING)

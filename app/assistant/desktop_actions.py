@@ -15,10 +15,12 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import unicodedata
 import webbrowser
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
+import hashlib
 
 
 MAX_SCREEN_CHARS = 12_000
@@ -26,6 +28,13 @@ MAX_SCREEN_LINES = 180
 MAX_FILE_SEARCH_RESULTS = 5
 MAX_FILE_SEARCH_DIRS = 2500
 FILE_SEARCH_SECONDS = 2.0
+MAX_EDIT_FILE_BYTES = 64 * 1024
+EDITABLE_FILE_SUFFIXES = {
+    ".c", ".cc", ".cpp", ".cs", ".css", ".csv", ".go", ".h", ".hpp", ".html",
+    ".ini", ".java", ".js", ".json", ".jsx", ".kt", ".log", ".md", ".php",
+    ".py", ".pyi", ".rb", ".rs", ".scss", ".sql", ".svg", ".swift", ".toml",
+    ".ts", ".tsx", ".txt", ".xml", ".yaml", ".yml",
+}
 EXECUTABLE_FILE_SUFFIXES = {
     ".bat", ".cmd", ".com", ".cpl", ".dll", ".docm", ".exe", ".hta", ".inf",
     ".jar", ".js", ".jse", ".lnk", ".msi", ".msp", ".potm", ".ppam", ".pptm",
@@ -80,6 +89,56 @@ class DesktopRequest:
 class ScreenSnapshot:
     title: str
     text: str
+
+
+@dataclass(frozen=True)
+class FileDraftRequest:
+    path: Path
+    instructions: str
+
+
+@dataclass(frozen=True)
+class FileDraft:
+    path: Path
+    original_content: str
+    expected_sha256: str | None
+
+
+_FILE_DRAFT = re.compile(
+    r"^(?:please\s+)?(?:create|write|edit|update)\s+(?:a\s+)?"
+    r"(?:text\s+|code\s+)?file\s+"
+    r"(?:\"([^\"]+)\"|'([^']+)'|(.+?))\s+"
+    r"(?:with|containing|that says)\s+(.+)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_RESEARCH = re.compile(
+    r"^(?:research\s+karo|search\s+karo|web\s+par\s+search\s+karo|"
+    r"internet\s+par\s+(?:search|research|dhoondo)\s+karo|"
+    r"research(?:\s+about)?|search(?:\s+the)?\s+web\s+for|"
+    r"look\s+up|find\s+current\s+information\s+about)\s+(.+)$",
+    re.IGNORECASE,
+)
+
+
+def parse_file_draft_request(text: str) -> FileDraftRequest | None:
+    match = _FILE_DRAFT.fullmatch(text.strip())
+    if not match:
+        return None
+    path = next((part for part in match.groups()[:3] if part is not None), "").strip()
+    instructions = match.group(4).strip()
+    if not path or not instructions:
+        return None
+    return FileDraftRequest(Path(path).expanduser(), instructions)
+
+
+def parse_research_request(text: str) -> str | None:
+    match = _RESEARCH.fullmatch(text.strip())
+    if not match:
+        return None
+    query = match.group(1).strip()
+    if not query or len(query) > 300 or any(ord(char) < 32 for char in query):
+        return None
+    return query
 
 
 def _normalize_phrase(value: str) -> str:
@@ -180,6 +239,8 @@ def parse_desktop_request(text: str) -> DesktopRequest | None:
     value = re.sub(r"\s+please[.!?]*$", "", value, flags=re.IGNORECASE).strip()
 
     normalized = _normalize_phrase(value)
+    if parse_research_request(value) is not None:
+        return DesktopRequest("research", parse_research_request(value) or "")
     if normalized in _READ_SCREEN_PHRASES:
         return DesktopRequest("read_screen")
     if normalized in {_normalize_phrase(item) for item in _LOCAL_STATUS_PHRASES}:
@@ -331,6 +392,8 @@ class WindowsDesktopActions:
         screen_reader=None,
         file_opener=None,
         home_dir: Path | None = None,
+        project_root: Path | None = None,
+        browser_paths: dict[str, Path] | None = None,
     ):
         self.platform = platform or os.name
         self.startfile = startfile if startfile is not None else getattr(os, "startfile", None)
@@ -341,6 +404,12 @@ class WindowsDesktopActions:
         self.screen_reader = screen_reader
         self.file_opener = file_opener if file_opener is not None else self.startfile
         self.home_dir = Path(home_dir) if home_dir is not None else Path.home()
+        self.project_root = (
+            Path(project_root).resolve()
+            if project_root is not None
+            else Path(__file__).resolve().parents[2]
+        )
+        self.browser_paths = browser_paths
 
     def _require_windows(self):
         if self.platform != "nt":
@@ -353,6 +422,34 @@ class WindowsDesktopActions:
             if not self.browser_open("about:blank", new=2):
                 raise DesktopActionError("I couldn't open your browser.")
             return "Opening your browser."
+
+        browser_alias = {
+            "chrome": "chrome", "google chrome": "chrome",
+            "edge": "edge", "microsoft edge": "edge", "ms edge": "edge",
+            "firefox": "firefox", "mozilla firefox": "firefox",
+            "brave": "brave", "brave browser": "brave",
+            "opera": "opera", "opera gx": "opera",
+            "vivaldi": "vivaldi", "chromium": "chromium",
+        }.get(normalized)
+        if browser_alias:
+            executable = self._find_browser(browser_alias)
+            if executable is not None:
+                try:
+                    self.launch_process([str(executable)], shell=False)
+                except OSError as exc:
+                    raise DesktopActionError(
+                        f"I couldn't open {target}. Check that it is installed."
+                    ) from exc
+                browser_label = {
+                    "chrome": "Google Chrome",
+                    "edge": "Microsoft Edge",
+                    "firefox": "Firefox",
+                    "brave": "Brave",
+                    "opera": "Opera",
+                    "vivaldi": "Vivaldi",
+                    "chromium": "Chromium",
+                }[browser_alias]
+                return f"Opening {browser_label}."
 
         built_in = BUILTIN_APPLICATIONS.get(normalized)
         if built_in:
@@ -379,6 +476,148 @@ class WindowsDesktopActions:
         except OSError as exc:
             raise DesktopActionError(f"I couldn't open {target}. Check that it is installed.") from exc
         return f"Opening {shortcut.stem}."
+
+    def _find_browser(self, browser: str) -> Path | None:
+        if self.browser_paths is not None:
+            candidate = self.browser_paths.get(browser)
+            return candidate if candidate is not None and candidate.is_file() else None
+        executable_names = {
+            "chrome": "chrome.exe",
+            "edge": "msedge.exe",
+            "firefox": "firefox.exe",
+            "brave": "brave.exe",
+            "opera": "opera.exe",
+            "vivaldi": "vivaldi.exe",
+            "chromium": "chrome.exe",
+        }
+        app_path = (
+            None if browser == "chromium"
+            else self._registered_app_path(executable_names[browser])
+        )
+        if app_path is not None and app_path.is_file():
+            return app_path
+        roots = [
+            Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")),
+            Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")),
+            Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))),
+        ]
+        relative_paths = {
+            "chrome": (Path("Google/Chrome/Application/chrome.exe"),),
+            "edge": (Path("Microsoft/Edge/Application/msedge.exe"),),
+            "firefox": (Path("Mozilla Firefox/firefox.exe"),),
+            "brave": (Path("BraveSoftware/Brave-Browser/Application/brave.exe"),),
+            "opera": (Path("Programs/Opera/launcher.exe"), Path("Programs/Opera/opera.exe")),
+            "vivaldi": (Path("Vivaldi/Application/vivaldi.exe"),),
+            "chromium": (Path("Chromium/Application/chrome.exe"),),
+        }
+        for root in roots:
+            for relative in relative_paths[browser]:
+                candidate = root / relative
+                if candidate.is_file():
+                    return candidate
+        return None
+
+    @staticmethod
+    def _registered_app_path(executable: str) -> Path | None:
+        if os.name != "nt":
+            return None
+        import winreg
+
+        key_path = rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{executable}"
+        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(hive, key_path) as key:
+                    value, _ = winreg.QueryValueEx(key, None)
+                return Path(value.strip('"'))
+            except OSError:
+                continue
+        return None
+
+    def prepare_file_draft(self, target: str | Path) -> FileDraft:
+        self._require_windows()
+        path = self._validate_editable_path(target)
+        if not path.parent.is_dir():
+            raise DesktopActionError("The folder doesn't exist. I won't create folders without a separate request.")
+        if not path.exists():
+            return FileDraft(path, "", None)
+        if not path.is_file() or path.is_symlink():
+            raise DesktopActionError("I can only draft edits for a regular text file, not a link or folder.")
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise DesktopActionError(f"I couldn't read that file: {exc}") from exc
+        if len(raw) > MAX_EDIT_FILE_BYTES:
+            raise DesktopActionError("That file is over 64 KB. I won't send its contents for an AI edit.")
+        if b"\0" in raw:
+            raise DesktopActionError("That file appears to contain binary data; I won't edit it as text.")
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise DesktopActionError("That file isn't valid UTF-8 text; I won't rewrite it.") from exc
+        return FileDraft(path, content, hashlib.sha256(raw).hexdigest())
+
+    def write_file_draft(
+        self,
+        target: str | Path,
+        content: str,
+        expected_sha256: str | None,
+    ) -> str:
+        self._require_windows()
+        path = self._validate_editable_path(target)
+        if not path.parent.is_dir():
+            raise DesktopActionError("The destination folder no longer exists.")
+        if len(content.encode("utf-8")) > MAX_EDIT_FILE_BYTES or "\0" in content:
+            raise DesktopActionError("The proposed text is too large or contains invalid binary data.")
+        if path.exists():
+            if not path.is_file() or path.is_symlink():
+                raise DesktopActionError("The destination is no longer a regular file.")
+            try:
+                current = path.read_bytes()
+            except OSError as exc:
+                raise DesktopActionError(f"I couldn't verify the current file: {exc}") from exc
+            if expected_sha256 is None or hashlib.sha256(current).hexdigest() != expected_sha256:
+                raise DesktopActionError("That file changed after the preview. Draft it again before saving.")
+        elif expected_sha256 is not None:
+            raise DesktopActionError("That file was removed after the preview. Draft it again before saving.")
+
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", prefix=".jarvis-", suffix=".tmp", dir=path.parent, delete=False
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(content.encode("utf-8"))
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.replace(temporary_path, path)
+        except OSError as exc:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+            raise DesktopActionError(f"I couldn't save the approved draft: {exc}") from exc
+        return f"Saved the approved draft to {path}."
+
+    def _validate_editable_path(self, target: str | Path) -> Path:
+        value = str(target).strip()
+        if not value or len(value) > 1024 or any(ord(char) < 32 for char in value):
+            raise DesktopActionError("Give me one valid text-file path.")
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = self.project_root / candidate
+        if candidate.is_symlink():
+            raise DesktopActionError("I won't edit a symbolic link.")
+        try:
+            path = candidate.resolve(strict=False)
+        except OSError as exc:
+            raise DesktopActionError("I couldn't resolve that destination path.") from exc
+        name = path.name.casefold()
+        if (name.startswith(".env") or any(word in name for word in ("secret", "credential", "password", "private_key"))
+                or name in {"id_rsa", "id_ed25519", "known_hosts"}):
+            raise DesktopActionError("That filename looks like a secret or credential file; I won't read or edit it.")
+        if path.suffix.casefold() not in EDITABLE_FILE_SUFFIXES:
+            raise DesktopActionError("I can only draft plain-text and source-code file types.")
+        if path.exists() and path.is_symlink():
+            raise DesktopActionError("I won't edit a symbolic link.")
+        return path
 
     def open_website(self, target: str) -> str:
         self._require_windows()

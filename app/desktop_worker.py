@@ -108,6 +108,18 @@ class AssistantWorker(QThread):
         except DesktopActionError as exc:
             return str(exc)
 
+    def save_file_draft(self, user_text, path, content, expected_sha256):
+        if self.engine is None or self.engine.desktop_actions is None:
+            return "File editing is unavailable."
+        try:
+            result = self.engine.desktop_actions.write_file_draft(
+                path, content, expected_sha256
+            )
+        except DesktopActionError as exc:
+            return str(exc)
+        self.engine.record_approved_file_edit(user_text, result)
+        return result
+
     def pause(self, paused):
         return self.engine is not None and self.engine.set_listening_enabled(not paused)
 

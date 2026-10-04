@@ -6,6 +6,8 @@ from app.assistant.desktop_actions import (
     DesktopActionError,
     DesktopRequest,
     WindowsDesktopActions,
+    parse_file_draft_request,
+    parse_research_request,
     find_start_menu_shortcut,
     normalize_website_url,
     parse_desktop_request,
@@ -20,6 +22,8 @@ from app.assistant.desktop_actions import (
     ("open a website example.com", DesktopRequest("open_website", "example.com")),
     ("YouTube kholo", DesktopRequest("open_website", "YouTube")),
     ("open browser", DesktopRequest("open_browser")),
+    ("research latest Windows 11 accessibility improvements", DesktopRequest("research", "latest Windows 11 accessibility improvements")),
+    ("search the web for Python 3.13 changes", DesktopRequest("research", "Python 3.13 changes")),
     ("read my screen", DesktopRequest("read_screen")),
     ("screen padh ke batao", DesktopRequest("read_screen")),
     ("screen पर क्या है", DesktopRequest("read_screen")),
@@ -119,10 +123,104 @@ def test_chrome_alias_resolves_the_start_menu_display_name(tmp_path):
     shortcut = tmp_path / "Google Chrome.lnk"
     shortcut.touch()
     opened = []
-    actions = WindowsDesktopActions(platform="nt", startfile=opened.append, menu_dirs=[tmp_path])
+    actions = WindowsDesktopActions(
+        platform="nt", startfile=opened.append, menu_dirs=[tmp_path], browser_paths={}
+    )
 
     assert actions.open_application("Chrome") == "Opening Google Chrome."
     assert opened == [str(shortcut)]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            'edit file "src/example.py" with add a greeting function',
+            ("src/example.py", "add a greeting function"),
+        ),
+        (
+            "create text file notes.txt containing remember the appointment",
+            ("notes.txt", "remember the appointment"),
+        ),
+    ],
+)
+def test_file_draft_requests_are_parsed(text, expected):
+    parsed = parse_file_draft_request(text)
+    assert parsed is not None
+    assert (parsed.path, parsed.instructions) == (Path(expected[0]), expected[1])
+
+
+def test_research_request_requires_explicit_search_intent():
+    assert parse_research_request("research the latest browser APIs") == "the latest browser APIs"
+    assert parse_research_request("internet par research karo new browser APIs") == "new browser APIs"
+    assert parse_research_request("research karo new browser APIs") == "new browser APIs"
+    assert parse_research_request("what do you think about research?") is None
+
+
+@pytest.mark.parametrize("browser", ["chrome", "edge", "firefox", "brave", "opera", "vivaldi", "chromium"])
+def test_named_installed_browser_launch_uses_resolved_executable(tmp_path, browser):
+    executable = tmp_path / f"{browser}.exe"
+    executable.touch()
+    calls = []
+    actions = WindowsDesktopActions(
+        platform="nt",
+        browser_paths={browser: executable},
+        launch_process=lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+
+    label = {
+        "chrome": "Google Chrome",
+        "edge": "Microsoft Edge",
+        "firefox": "Firefox",
+        "brave": "Brave",
+        "opera": "Opera",
+        "vivaldi": "Vivaldi",
+        "chromium": "Chromium",
+    }[browser]
+    assert actions.open_application(browser) == f"Opening {label}."
+    assert calls == [([str(executable)], {"shell": False})]
+
+
+def test_named_browser_reports_when_not_installed(tmp_path):
+    actions = WindowsDesktopActions(
+        platform="nt",
+        browser_paths={"brave": tmp_path / "missing.exe"},
+        menu_dirs=[],
+    )
+    with pytest.raises(DesktopActionError, match="installed"):
+        actions.open_application("Brave")
+
+
+def test_file_draft_reads_text_and_atomic_save_checks_for_stale_changes(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    target = root / "sample.txt"
+    target.write_text("initial", encoding="utf-8")
+    actions = WindowsDesktopActions(platform="nt", project_root=root)
+
+    draft = actions.prepare_file_draft("sample.txt")
+    assert draft.path == target
+    assert draft.original_content == "initial"
+    assert actions.write_file_draft(target, "updated", draft.expected_sha256).endswith(str(target) + ".")
+    assert target.read_text(encoding="utf-8") == "updated"
+
+    stale = actions.prepare_file_draft("sample.txt")
+    target.write_text("changed after preview", encoding="utf-8")
+    with pytest.raises(DesktopActionError, match="changed after the preview"):
+        actions.write_file_draft(target, "overwritten", stale.expected_sha256)
+    assert target.read_text(encoding="utf-8") == "changed after preview"
+
+
+def test_file_draft_refuses_secret_and_binary_files(tmp_path):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / ".env").write_text("SECRET=x", encoding="utf-8")
+    (root / "binary.txt").write_bytes(b"\0binary")
+    actions = WindowsDesktopActions(platform="nt", project_root=root)
+    with pytest.raises(DesktopActionError, match="secret or credential"):
+        actions.prepare_file_draft(".env")
+    with pytest.raises(DesktopActionError, match="binary data"):
+        actions.prepare_file_draft("binary.txt")
 
 
 def test_screen_reader_is_called_only_by_an_explicit_read_request():

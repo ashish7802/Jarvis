@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import ctypes
 from ctypes import wintypes
+import html
 import os
 import sys
 
@@ -451,6 +452,12 @@ class JarvisWindow(QMainWindow):
             self._append_message(payload.get("role", "assistant"), payload.get("text", ""))
         elif event == "confirmation_requested":
             self._confirm_system_action(payload)
+        elif event == "file_draft_consent":
+            self._confirm_file_content_share(payload)
+        elif event == "file_edit_confirmation":
+            self._confirm_file_edit(payload)
+        elif event == "research_sources":
+            self._append_research_sources(payload)
         elif event == "clear":
             self._clear_messages()
         elif event == "memory_count":
@@ -616,6 +623,90 @@ class JarvisWindow(QMainWindow):
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
         dialog.exec()
+
+    def _confirm_file_content_share(self, request):
+        path = str(request.get("path", ""))
+        location = (
+            "This file is outside the JARVIS project."
+            if request.get("outside_project")
+            else "This file is inside the JARVIS project."
+        )
+        try:
+            answer = QMessageBox.question(
+                self,
+                "Send existing file contents for drafting?",
+                f"{location}\n\nTo prepare this edit, the existing text in:\n{path}\n\n"
+                "will be sent to your configured AI provider. The contents will only "
+                "be sent if you approve. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            request["decision"]["approved"] = answer == QMessageBox.StandardButton.Yes
+        finally:
+            request["answered"].set()
+
+    def _confirm_file_edit(self, draft):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Review file draft")
+        dialog.resize(820, 640)
+        layout = QVBoxLayout(dialog)
+        location = (
+            "Outside the project — review the destination carefully."
+            if draft.get("outside_project")
+            else "Inside the JARVIS project."
+        )
+        heading = QLabel(f"{location}\nDestination: {draft['path']}")
+        heading.setWordWrap(True)
+        layout.addWidget(heading)
+        preview = QTextEdit(dialog)
+        preview.setReadOnly(True)
+        preview.setPlainText(str(draft["content"]))
+        layout.addWidget(preview, 1)
+        buttons = QDialogButtonBox(dialog)
+        save_button = buttons.addButton(
+            "Approve and save", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        save_button.setDefault(False)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.notice_label.setText("Draft cancelled. No file was changed.")
+            self.notice_label.show()
+            return
+        if self.worker is None:
+            result = "Jarvis is not ready to save the draft."
+        else:
+            result = self.worker.save_file_draft(
+                str(draft.get("user_text", "")),
+                str(draft["path"]),
+                str(draft["content"]),
+                draft.get("expected_sha256"),
+            )
+        self.notice_label.setText(result)
+        self.notice_label.show()
+
+    def _append_research_sources(self, sources):
+        if not sources:
+            return
+        self.messages_layout.takeAt(self.messages_layout.count() - 1)
+        card = QFrame()
+        card.setObjectName("assistantBubble")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(13, 9, 13, 10)
+        label = QLabel("SOURCES")
+        label.setObjectName("eyebrow")
+        layout.addWidget(label)
+        for index, source in enumerate(sources, 1):
+            title = html.escape(str(source.title))
+            url = html.escape(str(source.url), quote=True)
+            link = QLabel(f'<a href="{url}">[{index}] {title}</a>')
+            link.setOpenExternalLinks(True)
+            link.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+            layout.addWidget(link)
+        self.messages_layout.addWidget(card)
+        self.messages_layout.addStretch(1)
 
     def _input_device_changed(self, index):
         identifier = self.input_device_combo.itemData(index) or ""

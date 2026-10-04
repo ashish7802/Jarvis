@@ -78,10 +78,27 @@ while listening, understanding, thinking and replying.
   and asks one focused clarification instead of guessing when needed. Open-ended
   answers require a Groq API key; mock mode only has a few
   built-in demo replies.
-- **Local desktop actions** can open built-in Windows tools, apps with a Start
-  Menu shortcut, and normal HTTP(S) websites after a direct voice request such
-  as "open Calculator", "Chrome kholo", or "YouTube kholo". Jarvis does not run
-  model-generated shell commands, type into apps, click buttons, or submit forms.
+- **Local desktop actions** can open built-in Windows tools, Chrome, Edge,
+  Firefox, Brave, Opera, Vivaldi, Chromium when installed, other apps with a
+  Start Menu shortcut, and normal HTTP(S) websites. Try "Chrome kholo",
+  "Brave kholo", or "YouTube kholo". Jarvis does not run model-generated shell
+  commands, type into arbitrary apps, click buttons, or submit forms.
+- **Live web research** runs only after an explicit request such as
+  "research the latest Python release" or "search the web for Windows 11
+  accessibility". Jarvis queries DuckDuckGo, summarizes the returned snippets
+  with its configured AI provider, and shows clickable source links in chat.
+  The search query goes to DuckDuckGo; returned snippets and links go to the
+  configured AI provider. Search results are untrusted and may be incomplete.
+- **Reviewed text/code file drafts** support requests such as `edit file
+  "src/example.py" with add a greeting function` or `create file notes.txt
+  containing meeting notes`. Relative paths are rooted in the project;
+  absolute paths may target another location. Existing contents are not sent
+  to the AI provider until you approve a disclosure dialog. Jarvis then shows a
+  read-only full-file preview and writes only after you explicitly approve
+  **Approve and save**. Paths outside the project are called out in the dialog.
+  It supports bounded UTF-8 plain-text/source files (up to 64 KB), never secret
+  or credential files, binaries, symlinks or arbitrary file deletion. A changed
+  file invalidates the preview. Save writes atomically; code is never executed.
 - **Local system help** can report basic OS/CPU/disk/RAM status, find filenames
   in Desktop/Documents/Downloads, and open a uniquely matched file from those
   folders. Try "system status", "find file budget.xlsx", or "open file notes.txt".
@@ -102,11 +119,11 @@ while listening, understanding, thinking and replying.
   <title>". The AI never receives this
   private local store unless you choose to mention its contents in a question.
 - **Read my screen** remains opt-in. When enabled and explicitly asked, Jarvis
-  reads accessible text from the
-  active window (not screenshots or text drawn inside images) and sends that
-  text to your configured AI provider for this response. Password fields are
-  skipped, and Jarvis does not save the captured text. Some apps expose little
-  or no accessible text, so their screen content may not be readable.
+  reads accessible text from the active window (not screenshots or text drawn
+  inside images) and sends that text to your configured AI provider for this
+  response. Password fields are skipped, and Jarvis does not save the captured
+  text. Some apps expose little or no accessible text, so their screen content
+  may not be readable.
 - Closing the window stops the assistant. **Ctrl+Shift+J** also exits. Launching
   a second copy brings the existing window forward instead of opening another mic.
 - After `powershell -File .\install_desktop.ps1`, the app is installed in

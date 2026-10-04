@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -239,6 +240,91 @@ def test_engine_restores_saved_turns_into_follow_up_context():
     previous = [message.content for message in eng.ai.calls[-1]]
     assert "I prefer concise replies." in previous
     assert "I'll keep replies concise." in previous
+
+
+def test_live_research_uses_returned_sources_and_emits_source_data():
+    from app.assistant.research import ResearchResult
+
+    events = []
+
+    class Researcher:
+        def search(self, query):
+            assert query == "current Python release"
+            return [ResearchResult("Python releases", "https://python.org/downloads/", "Current releases")]
+
+    engine = _make_engine(cooldown_seconds=0, on_event=lambda *event: events.append(event))
+    engine.researcher = Researcher()
+    engine.ai.chat = lambda messages: (
+        events.append(("ai_context", messages[-1].content))
+        or "The latest release is shown on Python's release page [1]."
+    )
+    engine.startup()
+    engine.submit_text("research current Python release")
+    engine.process_pending_wake()
+    ai_context = next(payload for kind, payload in events if kind == "ai_context")
+    assert "https://python.org/downloads/" in ai_context
+    sources = next(payload for kind, payload in events if kind == "research_sources")
+    assert sources[0].title == "Python releases"
+
+
+def test_editing_existing_file_requires_consent_before_ai_and_emits_preview():
+    from app.assistant.desktop_actions import FileDraft
+
+    events = []
+    target = Path("C:/outside/readme.md")
+
+    class DesktopActions:
+        project_root = Path("C:/project")
+
+        def prepare_file_draft(self, _target):
+            return FileDraft(target, "Existing content", "sha256")
+
+    def on_event(kind, payload):
+        events.append((kind, payload))
+        if kind == "file_draft_consent":
+            payload["decision"]["approved"] = True
+            payload["answered"].set()
+
+    engine = _make_engine(cooldown_seconds=0, on_event=on_event)
+    engine.desktop_actions = DesktopActions()
+    engine.ai.chat = lambda messages: (
+        events.append(("ai_context", messages[-1].content)) or "# reviewed draft"
+    )
+    engine.startup()
+    engine.submit_text('edit file "readme.md" with improve the introduction')
+    engine.process_pending_wake()
+    assert any(kind == "file_draft_consent" for kind, _ in events)
+    ai_context = next(payload for kind, payload in events if kind == "ai_context")
+    assert "Existing content" in ai_context
+    draft = next(payload for kind, payload in events if kind == "file_edit_confirmation")
+    assert draft["content"] == "# reviewed draft"
+    assert draft["outside_project"] is True
+
+
+def test_editing_existing_file_is_not_sent_without_consent():
+    from app.assistant.desktop_actions import FileDraft
+
+    class DesktopActions:
+        project_root = Path("C:/project")
+
+        def prepare_file_draft(self, _target):
+            return FileDraft(Path("C:/project/private.txt"), "private contents", "sha256")
+
+    events = []
+
+    def on_event(kind, payload):
+        events.append((kind, payload))
+        if kind == "file_draft_consent":
+            payload["decision"]["approved"] = False
+            payload["answered"].set()
+
+    engine = _make_engine(cooldown_seconds=0, on_event=on_event)
+    engine.desktop_actions = DesktopActions()
+    engine.startup()
+    engine.submit_text('edit file "private.txt" with summarize it')
+    engine.process_pending_wake()
+    assert engine.ai.calls == []
+    assert not any(kind == "file_edit_confirmation" for kind, _ in events)
 
 
 def test_ai_prompt_supports_open_conversation_and_addressee_clarification():

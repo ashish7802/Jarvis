@@ -1,7 +1,9 @@
 """Tests for the holographic desktop assistant console."""
+import threading
+
 import pytest
 from PySide6.QtCore import QSettings, Qt
-from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QLineEdit, QMessageBox
 
 from app.assistant.commands import desktop_command
 from app.assistant.language import localize
@@ -53,6 +55,101 @@ def test_clear_memory_requires_confirmation(qt_app, tmp_path, monkeypatch):
     window._clear_conversation()
     assert not worker.cleared
     window.worker = None
+    window.close()
+
+
+def test_file_content_sharing_is_denied_by_default(qt_app, tmp_path, monkeypatch):
+    prefs = QSettings(str(tmp_path / "file-consent.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    request = {"path": "C:/outside/private.txt", "decision": {}, "answered": threading.Event()}
+    monkeypatch.setattr(
+        "app.desktop.QMessageBox.question",
+        lambda *_args: QMessageBox.StandardButton.No,
+    )
+    window._confirm_file_content_share(request)
+    assert request["decision"]["approved"] is False
+    assert request["answered"].is_set()
+    window.close()
+
+
+def test_file_edit_preview_cancel_never_writes(qt_app, tmp_path, monkeypatch):
+    class Worker:
+        def __init__(self):
+            self.saved = []
+
+        def save_file_draft(self, *args):
+            self.saved.append(args)
+            return "saved"
+
+    prefs = QSettings(str(tmp_path / "file-preview.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    worker = Worker()
+    window.worker = worker
+    monkeypatch.setattr(
+        "app.desktop.QDialog.exec",
+        lambda _dialog: QDialog.DialogCode.Rejected,
+    )
+    window._confirm_file_edit({
+        "path": "C:/outside/draft.txt",
+        "content": "review me",
+        "expected_sha256": None,
+        "user_text": "create file",
+        "outside_project": True,
+    })
+    assert worker.saved == []
+    assert "No file was changed" in window.notice_label.text()
+    window.worker = None
+    window.close()
+
+
+def test_file_edit_preview_requires_and_obeys_explicit_save_approval(qt_app, tmp_path, monkeypatch):
+    class Worker:
+        def __init__(self):
+            self.saved = []
+
+        def save_file_draft(self, *args):
+            self.saved.append(args)
+            return "Saved the approved draft."
+
+    prefs = QSettings(str(tmp_path / "file-approve.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    worker = Worker()
+    window.worker = worker
+    monkeypatch.setattr(
+        "app.desktop.QDialog.exec",
+        lambda _dialog: QDialog.DialogCode.Accepted,
+    )
+    window._confirm_file_edit({
+        "path": "C:/outside/draft.txt",
+        "content": "reviewed content",
+        "expected_sha256": None,
+        "user_text": "create file",
+        "outside_project": True,
+    })
+    assert worker.saved == [(
+        "create file",
+        "C:/outside/draft.txt",
+        "reviewed content",
+        None,
+    )]
+    assert "approved" in window.notice_label.text()
+    window.worker = None
+    window.close()
+
+
+def test_research_sources_render_as_clickable_links(qt_app, tmp_path):
+    from app.assistant.research import ResearchResult
+
+    prefs = QSettings(str(tmp_path / "sources.ini"), QSettings.Format.IniFormat)
+    window = JarvisWindow(None, autostart=False, preferences=prefs)
+    window._append_research_sources([
+        ResearchResult("Official source", "https://example.com", "snippet")
+    ])
+    links = [label for label in window.messages_widget.findChildren(QLabel)
+             if "Official source" in label.text()]
+    assert len(links) == 1
+    assert links[0].openExternalLinks()
+    assert "https://example.com" in links[0].text()
     window.close()
 
 

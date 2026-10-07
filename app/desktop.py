@@ -186,6 +186,26 @@ class JarvisWindow(QMainWindow):
         self.language_combo.setCurrentIndex(max(0, language_index))
         self.language_combo.currentIndexChanged.connect(self._language_changed)
         system_layout.addWidget(self.language_combo)
+
+        system_layout.addWidget(self._small_label("JARVIS Voice (Male)"))
+        self.voice_combo = QComboBox()
+        self.voice_options = [
+            ("Guy (US Male - Warm)", "en-US-GuyNeural", "hi-IN-MadhurNeural"),
+            ("Ryan (British Male - Classic JARVIS)", "en-GB-RyanNeural", "hi-IN-MadhurNeural"),
+            ("Christopher (US Male - Deep)", "en-US-ChristopherNeural", "hi-IN-MadhurNeural"),
+            ("Eric (US Male - Friendly)", "en-US-EricNeural", "hi-IN-MadhurNeural"),
+            ("Prabhat (Indian English Male)", "en-IN-PrabhatNeural", "hi-IN-MadhurNeural"),
+        ]
+        saved_voice = self.preferences.value("tts_voice", "en-US-GuyNeural")
+        for label, en_v, hi_v in self.voice_options:
+            self.voice_combo.addItem(label, (en_v, hi_v))
+        for idx, (lbl, en_v, hi_v) in enumerate(self.voice_options):
+            if en_v == saved_voice:
+                self.voice_combo.setCurrentIndex(idx)
+                break
+        self.voice_combo.currentIndexChanged.connect(self._voice_changed)
+        system_layout.addWidget(self.voice_combo)
+
         self.pause_button = QPushButton("Pause microphone")
         self.pause_button.clicked.connect(self._toggle_pause)
         system_layout.addWidget(self.pause_button)
@@ -783,6 +803,16 @@ class JarvisWindow(QMainWindow):
             self.language_combo.setCurrentIndex(max(0, previous))
             self.language_combo.blockSignals(False)
             self.notice_label.setText("Language can be changed when Jarvis is ready.")
+
+    def _voice_changed(self, index):
+        data = self.voice_combo.itemData(index)
+        if not data:
+            return
+        en_voice, hi_voice = data
+        self.preferences.setValue("tts_voice", en_voice)
+        self.preferences.setValue("tts_hindi_voice", hi_voice)
+        if self.worker is not None and hasattr(self.worker, "engine"):
+            self.worker.engine.set_voices(voice=en_voice, hindi_voice=hi_voice)
             self.notice_label.show()
         self.orb.update()
 

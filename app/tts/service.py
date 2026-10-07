@@ -58,6 +58,12 @@ class TTSService:
     def attach_player(self, player):
         self._player = player
 
+    def set_voices(self, voice=None, hindi_voice=None):
+        if voice:
+            self.voice = voice
+        if hindi_voice:
+            self.hindi_voice = hindi_voice
+
     def _interrupted(self):
         return self._stop.is_set() or self._closed.is_set() or self.turn_cancelled.is_set()
 

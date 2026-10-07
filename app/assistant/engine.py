@@ -145,6 +145,10 @@ class AssistantEngine:
             self._apply_language_mode(mode)
             return True
 
+    def set_voices(self, voice=None, hindi_voice=None):
+        if hasattr(self.tts, "set_voices"):
+            self.tts.set_voices(voice=voice, hindi_voice=hindi_voice)
+
     def set_screen_read_enabled(self, enabled):
         with self._lock:
             if self._shutdown.is_set() or self._state not in (State.STARTING, State.STANDBY):

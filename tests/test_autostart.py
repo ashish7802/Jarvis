@@ -39,6 +39,17 @@ def test_xml_and_powershell_paths_preserve_spaces_quotes_and_ampersands(tmp_path
     assert _quote("Ashish's & Jarvis") == "'Ashish''s & Jarvis'"
 
 
+def test_source_checkout_task_runs_pythonw_without_a_console(tmp_path):
+    pythonw = tmp_path / "Python Install" / "pythonw.exe"
+    project = tmp_path / "Jarvis Project"
+    root = ET.fromstring(task_xml(
+        pythonw, "S-1-5-21-1001", "-m app.main --autostart", project
+    ))
+    assert root.find(".//t:Command", NS).text == str(pythonw.resolve())
+    assert root.find(".//t:Arguments", NS).text == "-m app.main --autostart"
+    assert root.find(".//t:WorkingDirectory", NS).text == str(project.resolve())
+
+
 def test_missing_executable_never_registers_a_broken_login_task(tmp_path, monkeypatch):
     monkeypatch.setattr("app.system.autostart._powershell", lambda code: pytest.fail("Windows was changed"))
     with pytest.raises(FileNotFoundError):

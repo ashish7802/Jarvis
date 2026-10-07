@@ -14,6 +14,17 @@ def test_default_target_points_into_dist(tmp_path, monkeypatch):
     assert target.parent.name == "JARVIS"
 
 
+def test_default_launch_uses_source_pythonw_when_no_exe_is_built(tmp_path, monkeypatch):
+    monkeypatch.setattr(startup, "_default_target", lambda: tmp_path / "missing.exe")
+
+    target, arguments, working_directory = startup._default_launch()
+
+    assert target.name == "pythonw.exe"
+    assert target.is_file()
+    assert arguments == "-m app.main --autostart"
+    assert working_directory == Path(startup.__file__).resolve().parent.parent.parent
+
+
 def test_install_uninstall_roundtrip(tmp_path, monkeypatch):
     fake_target = tmp_path / "JARVIS.exe"
     fake_target.write_bytes(b"MZ")

@@ -31,6 +31,7 @@ def test_happy_path_transitions():
 
 def test_wake_with_prebuffered_audio_can_transcribe():
     assert can_transition(State.WAKE_DETECTED, State.TRANSCRIBING)
+    assert can_transition(State.WAKE_DETECTED, State.LISTENING)
 
 
 def test_illegal_transitions_rejected():

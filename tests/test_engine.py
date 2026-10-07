@@ -44,8 +44,15 @@ class FakeSTT(STTService):
         self._transcript = transcript
         self.calls = 0
 
-    def transcribe(self, audio, sample_rate: int = 16_000) -> str:  # type: ignore[override]
+    def transcribe(
+        self,
+        audio,
+        sample_rate: int = 16_000,
+        *,
+        vad_filter: bool = True,
+    ) -> str:  # type: ignore[override]
         self.calls += 1
+        self.last_vad_filter = vad_filter
         return self._transcript
 
     def shutdown(self) -> None:  # type: ignore[override]
@@ -163,6 +170,7 @@ def test_engine_happy_path():
     assert eng.state == State.STANDBY
     assert eng.ai.calls, "AI was not called"
     assert eng.stt.calls == 1
+    assert eng.stt.last_vad_filter is False
     assert "I am here" in eng.tts.spoken[-1]
     assert "what is Python" in eng.context.messages()[-2].content
 
@@ -194,6 +202,16 @@ def test_hands_free_discards_non_directed_speech_before_ai_or_memory():
     assert memory.turns == []
 
 
+def test_hands_free_reports_unrecognized_speech():
+    eng = _make_engine(stt=FakeSTT(""), continuous_listening=True)
+    eng.startup()
+    eng.wake.fire_speech(np.ones(4800, dtype=np.int16))
+    eng.process_pending_wake()
+    assert eng.state == State.STANDBY
+    assert not eng.ai.calls
+    assert "didn't catch that" in eng.tts.spoken[-1]
+
+
 def test_hands_free_routes_jarvis_addressed_speech_and_remembers_turn():
     class Memory:
         turns = []
@@ -218,6 +236,21 @@ def test_hands_free_routes_jarvis_addressed_speech_and_remembers_turn():
     eng.process_pending_wake()
     assert eng.ai.calls
     assert memory.turns == [("Jarvis, explain how Python works.", "I am here, Sir.")]
+
+
+def test_hands_free_keeps_follow_up_conversation_open_briefly():
+    stt = FakeSTT("Jarvis, explain Python.")
+    eng = _make_engine(stt=stt, continuous_listening=True, cooldown_seconds=0)
+    eng.startup()
+    eng.wake.fire_speech(np.ones(4800, dtype=np.int16))
+    eng.process_pending_wake()
+
+    stt._transcript = "And what about Java?"
+    eng.wake.fire_speech(np.ones(4800, dtype=np.int16))
+    eng.process_pending_wake()
+
+    assert len(eng.ai.calls) == 2
+    assert "And what about Java?" in eng.context.messages()[-2].content
 
 
 def test_engine_restores_saved_turns_into_follow_up_context():

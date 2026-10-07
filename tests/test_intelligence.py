@@ -99,31 +99,37 @@ def test_new_wake_event_is_not_overwritten_by_previous_command_cleanup():
 
 def stub_stt():
     received = []
+    received_options = []
     def transcribe(audio, **kwargs):
         received.append(audio.copy())
+        received_options.append(kwargs)
         return [SimpleNamespace(text=" Test speech. ")], None
     stt = STTService()
     stt._model = SimpleNamespace(transcribe=transcribe)
-    return stt, received
+    return stt, received, received_options
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_float_audio_keeps_volume_and_never_becomes_a_filename(dtype):
-    stt, received = stub_stt()
+    stt, received, received_options = stub_stt()
     assert stt.transcribe(np.full(1600, 0.5, dtype=dtype)) == "Test speech."
     assert received[0].dtype == np.float32
     assert np.allclose(received[0], 0.5)
+    assert received_options[0]["vad_filter"] is True
 
 
 def test_pcm_stereo_and_sample_rate_are_normalized():
-    stt, received = stub_stt()
-    assert stt.transcribe(np.full((4800, 2), 16384, dtype=np.int16), 48000) == "Test speech."
+    stt, received, received_options = stub_stt()
+    assert stt.transcribe(
+        np.full((4800, 2), 16384, dtype=np.int16), 48000, vad_filter=False
+    ) == "Test speech."
     assert received[0].shape == (1600,)
     assert np.isclose(received[0][100:-100].mean(), 0.5, atol=0.001)
+    assert received_options[0]["vad_filter"] is False
 
 
 @pytest.mark.parametrize("audio", [np.zeros(1600), np.full(10, np.nan), np.full(10, np.inf)])
 def test_silence_and_invalid_audio_never_reach_whisper(audio):
-    stt, received = stub_stt()
+    stt, received, _options = stub_stt()
     assert stt.transcribe(audio) == ""
     assert not received

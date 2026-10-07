@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     input_device: str = ""
     stt_model: str = "small"
     stt_language: str = "auto"
-    stt_beam_size: int = Field(default=3, ge=1, le=5)
+    stt_beam_size: int = Field(default=1, ge=1, le=5)
     user_name: str = ""
     context_messages: int = Field(default=31, ge=3, le=101)
     ai_request_timeout: float = Field(default=15.0, ge=5.0, le=60.0)

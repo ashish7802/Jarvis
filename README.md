@@ -171,8 +171,10 @@ The explicit `energy` backend and the legacy headless fallback remain available.
   current information cannot be verified. Conversation memory keeps complete
   exchanges (up to 31 messages by default) and excludes failed Groq requests.
 - Say **"repeat that"**, **"clear conversation"**, **"what time is it"**, or
-  **"what's today's date"** after the wake-word acknowledgement. Time and date
-  come from the PC's clock. Memory lasts for this running session only.
+  **"what's today's date"** after addressing Jarvis once. Hands-free follow-up
+  turns remain open for 45 seconds, so you don't need to repeat "Jarvis" each
+  time. Time and date come from the PC's clock. Memory lasts for this running
+  session only.
 - Speech recognition detects the spoken language automatically. English and
   Hindi use the local multilingual Whisper model; Devanagari replies use a
   Hindi voice. Choose English or Hindi in the Language selector if automatic
@@ -281,7 +283,8 @@ python -m app.system.startup --install
 ```
 
 This registers the current user's login/unlock task for the installed EXE (or
-the `dist` EXE if no local installation exists). For an installation outside
+the `dist` EXE if no local installation exists). If neither exists, it uses
+the repository's `.venv` Python GUI launcher. For an installation outside
 OneDrive, run `powershell -File .\install_desktop.ps1` after building. To remove:
 
 ```bat
@@ -310,6 +313,9 @@ Key values:
 | `GROQ_API_KEY` | _empty_ | Enables Groq chat; keep the key in your local `.env` |
 | `AI_REQUEST_TIMEOUT` | `15` | Timeout per Groq request, in seconds |
 | `AI_MAX_ATTEMPTS` | `2` | Maximum Groq request attempts |
+| `SILENCE_TIMEOUT` | `1.8` | Seconds of silence that end a voice recording; raise it if you pause mid-sentence |
+| `STT_MODEL` | `small` | Local speech-recognition model; `small` keeps multilingual/Hindi accuracy |
+| `STT_BEAM_SIZE` | `1` | Recognition search width; `1` is faster, while larger values may improve difficult audio |
 | `TTS_PROVIDER` | `edge` | `edge` or `mock` |
 | `TTS_VOICE` | `en-US-GuyNeural` | Any edge-tts voice id |
 | `WAKE_WORD_ENABLED` | `true` | Disable to skip wake-word detection |

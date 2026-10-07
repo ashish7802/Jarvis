@@ -117,9 +117,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 def desktop_factory(on_event):
     from app.config import reset_settings_cache
+    from app.system.startup import ensure_startup_installed
     reset_settings_cache()
     _configure()
     settings = get_settings()
+    threading.Thread(target=ensure_startup_installed, daemon=True).start()
     return build_engine(settings, on_event=on_event, desktop=True), settings
 
 

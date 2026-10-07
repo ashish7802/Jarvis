@@ -37,8 +37,9 @@ def task_name(sid):
     return "JARVIS Desktop - " + sid
 
 
-def task_xml(target, sid):
+def task_xml(target, sid, arguments="--autostart", working_directory=None):
     target = Path(target).resolve()
+    working_directory = Path(working_directory or target.parent).resolve()
     root = ET.Element("Task", version="1.2", xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task")
     def child(parent, tag, text=None, **attributes):
         element = ET.SubElement(parent, tag, attributes)
@@ -77,18 +78,18 @@ def task_xml(target, sid):
     actions = child(root, "Actions", Context="CurrentUser")
     action = child(actions, "Exec")
     child(action, "Command", str(target))
-    child(action, "Arguments", "--autostart")
-    child(action, "WorkingDirectory", str(target.parent))
+    child(action, "Arguments", arguments)
+    child(action, "WorkingDirectory", str(working_directory))
     return ET.tostring(root, encoding="unicode")
 
 
-def install_task(target):
+def install_task(target, arguments="--autostart", working_directory=None):
     target = Path(target).resolve()
     if not target.is_file():
         raise FileNotFoundError(f"JARVIS executable not found: {target}")
     sid = current_sid()
     with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", encoding="utf-8", delete=False) as file:
-        file.write(task_xml(target, sid))
+        file.write(task_xml(target, sid, arguments, working_directory))
         xml_path = Path(file.name)
     try:
         _powershell(

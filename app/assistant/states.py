@@ -27,6 +27,7 @@ _ALLOWED: dict[State, set[State]] = {
     },
     State.WAKE_DETECTED: {
         State.ACKNOWLEDGING,
+        State.LISTENING,
         State.TRANSCRIBING,
         State.THINKING,
         State.ERROR,

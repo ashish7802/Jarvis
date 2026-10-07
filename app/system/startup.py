@@ -40,6 +40,21 @@ def _default_target() -> Path:
     return candidate
 
 
+def _default_launch() -> tuple[Path, str, Path]:
+    """Resolve a packaged launch or the current source checkout's Python app."""
+    target = _default_target()
+    if target.is_file() or getattr(sys, "frozen", False):
+        return target, "--autostart", target.parent
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+    pythonw = project_root / ".venv" / "Scripts" / "pythonw.exe"
+    if not pythonw.is_file():
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if pythonw.is_file():
+        return pythonw, "-m app.main --autostart", project_root
+    return target, "--autostart", target.parent
+
+
 def install(target: Path | None = None) -> Path:
     """Create the Startup shortcut. Returns the shortcut path."""
     target = target or _default_target()
@@ -68,6 +83,26 @@ def uninstall() -> Path | None:
 
 def is_installed() -> bool:
     return (_startup_dir() / LINK_NAME).exists()
+
+
+def ensure_startup_installed() -> bool:
+    """Best-effort registration of Windows login startup task/shortcut if not present."""
+    if os.name != "nt":
+        return False
+    try:
+        if not is_installed():
+            target, arguments, working_directory = _default_launch()
+            if target.exists():
+                try:
+                    from app.system import autostart
+                    autostart.install_task(target, arguments, working_directory)
+                except Exception:
+                    pass
+                install(target)
+                return True
+    except Exception as exc:
+        log.warning("Could not auto-register Windows startup: %s", exc)
+    return False
 
 
 def _create_shortcut(target: Path, shortcut: Path) -> None:
@@ -135,7 +170,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.install:
         try:
-            info = autostart.install_task(args.target or _default_target())
+            if args.target:
+                target, arguments, working_directory = (
+                    args.target, "--autostart", args.target.parent
+                )
+            else:
+                target, arguments, working_directory = _default_launch()
+            info = autostart.install_task(target, arguments, working_directory)
             # Remove the old sign-in-only shortcut only after registration works.
             uninstall()
         except FileNotFoundError as e:

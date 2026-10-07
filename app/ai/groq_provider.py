@@ -16,23 +16,27 @@ class GroqProvider(AIProvider):
     name = "groq"
 
     def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile",
-                 request_timeout: float = 15.0, max_attempts: int = 2) -> None:
+                 request_timeout: float = 15.0, max_attempts: int = 2,
+                 max_tokens: int = 350) -> None:
         self._model = model
         self.max_attempts = max_attempts
+        self.max_tokens = max_tokens
         self._cancelled = threading.Event()
         self.turn_cancelled = threading.Event()
         self._client = httpx.Client(
             timeout=request_timeout,
             headers={"Authorization": f"Bearer {api_key}"},
         )
-        log.info("GroqProvider initialised (model=%s)", self._model)
+        log.info("GroqProvider initialised (model=%s, max_tokens=%s)", self._model, self.max_tokens)
 
     def chat(self, messages: list[ChatMessage]) -> str:
+        max_tokens = getattr(self, "max_tokens", 350)
         payload = {
             "model": self._model,
             "messages": [{"role": message.role, "content": message.content}
                          for message in messages],
             "temperature": 0.7,
+            "max_tokens": max_tokens,
         }
         if not any(message.role == "user" for message in messages):
             return ""

@@ -22,6 +22,7 @@ from app.audio.devices import resolve_input_device
 from app.assistant.research import ResearchError
 
 log = logging.getLogger("jarvis.engine")
+CONVERSATION_CONTINUATION_SECONDS = 45.0
 SYSTEM_PROMPT = (
     "You are JARVIS, a friendly personal voice assistant with a relaxed, thoughtful conversational style. "
     "The user sees you as a friend: be warm, dependable, patient, and attentive without pretending to be human or claiming feelings. "
@@ -93,6 +94,7 @@ class AssistantEngine:
         self._reply_language = "hi" if self.language_mode in ("hi", "hinglish") else "en"
         self._pending_text = None
         self._pending_audio = None
+        self._conversation_active_until = 0.0
         self._controls = queue.SimpleQueue()
         self.cooldown_seconds = cooldown_seconds
         prompt = SYSTEM_PROMPT + (f" The user's preferred name is {user_name}." if user_name else "")
@@ -158,6 +160,8 @@ class AssistantEngine:
             if enabled and (self.wake is None or not hasattr(self.wake, "set_speech_callback")):
                 return False
             self.continuous_listening = bool(enabled)
+            if not enabled:
+                self._conversation_active_until = 0.0
             if self.wake is not None and hasattr(self.wake, "set_speech_callback"):
                 self.wake.set_speech_callback(self._on_speech if enabled else None)
             self._emit("hands_free", self.continuous_listening)
@@ -334,6 +338,8 @@ class AssistantEngine:
         with self._lock:
             if self._shutdown.is_set() or self._state != State.STANDBY:
                 return False
+            if not enabled:
+                self._conversation_active_until = 0.0
             # Block new wakes immediately; release/reopen the stream on the worker.
             self._listening_enabled = False
             self._set_wake_enabled(False)
@@ -498,16 +504,29 @@ class AssistantEngine:
             if text is not None:
                 self.set_state(State.THINKING)
                 self._answer(text)
+                if not self._interrupted():
+                    self._conversation_active_until = (
+                        time.monotonic() + CONVERSATION_CONTINUATION_SECONDS
+                    )
                 return
             if audio is not None:
                 self.set_state(State.TRANSCRIBING)
-                text = self.stt.transcribe(audio).strip()
-                if self._interrupted() or not is_directed_to_jarvis(text):
-                    if text:
-                        log.info("Discarded locally transcribed speech not directed to Jarvis")
+                text = self.stt.transcribe(audio, vad_filter=False).strip()
+                if self._interrupted():
+                    return
+                if not text:
+                    self._listening_feedback("I didn't catch that. Could you say it again?")
+                    return
+                if (not is_directed_to_jarvis(text)
+                        and time.monotonic() >= self._conversation_active_until):
+                    log.info("Discarded locally transcribed speech not directed to Jarvis")
                     return
                 self.set_state(State.THINKING)
                 self._answer(text)
+                if not self._interrupted():
+                    self._conversation_active_until = (
+                        time.monotonic() + CONVERSATION_CONTINUATION_SECONDS
+                    )
                 return
             # Do not speak an acknowledgement before recording. That used to
             # make Jarvis talk over the first words of a natural reply.
@@ -540,7 +559,7 @@ class AssistantEngine:
                     self._listening_feedback("I didn't hear anything. Try saying that again when you're ready.")
                 return
             self.set_state(State.TRANSCRIBING)
-            text = self.stt.transcribe(audio).strip()
+            text = self.stt.transcribe(audio, vad_filter=False).strip()
             if self._interrupted():
                 return
             if not text:

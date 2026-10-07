@@ -67,7 +67,13 @@ class STTService:
                 raise ValueError(f"Unsupported STT_LANGUAGE: {self.language}")
             log.info("Whisper model loaded")
 
-    def transcribe(self, audio: np.ndarray, sample_rate: int = 16_000) -> str:
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        sample_rate: int = 16_000,
+        *,
+        vad_filter: bool = True,
+    ) -> str:
         """Transcribe a numpy int16 mono array. Returns the recognized text
         (stripped) or "" if nothing was recognized.
 
@@ -100,7 +106,7 @@ class STTService:
             # faster-whisper accepts 16 kHz floats directly; no microphone WAV
             # is written to disk, and float64 input keeps its original volume.
             segments, _info = self._model.transcribe(
-                audio_f, beam_size=self.beam_size, vad_filter=True,
+                audio_f, beam_size=self.beam_size, vad_filter=vad_filter,
                 language=self.language, condition_on_previous_text=False, task="transcribe",
                 initial_prompt=("Hello, Jarvis. Hindi and English conversation. नमस्ते, जार्विस। हिंदी और इंग्लिश में बातचीत।"
                                 if self.language in (None, "hi") else None),

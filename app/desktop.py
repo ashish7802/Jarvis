@@ -537,7 +537,7 @@ class JarvisWindow(QMainWindow):
             return
         self.messages_layout.takeAt(self.messages_layout.count() - 1)
         card = QFrame()
-        card.setObjectName("userBubble" if role == "user" else "assistantBubble")
+        card.setObjectName("userCard" if role == "user" else "assistantCard")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(13, 9, 13, 10)
         layout.setSpacing(4)

@@ -34,7 +34,7 @@ class AIProviderError(RuntimeError):
     """Raised for unrecoverable provider errors during *initialization*."""
 
 
-def build_provider(name: str, *, groq_key: str = "", model: str = "", request_timeout: float = 15.0, max_attempts: int = 2) -> AIProvider:
+def build_provider(name: str, *, groq_key: str = "", model: str = "", request_timeout: float = 15.0, max_attempts: int = 2, max_tokens: int = 350) -> AIProvider:
     name = (name or "").strip().lower()
     if name == "groq":
         from app.ai.groq_provider import GroqProvider
@@ -42,7 +42,7 @@ def build_provider(name: str, *, groq_key: str = "", model: str = "", request_ti
         if not groq_key:
             raise AIProviderError("GROQ_API_KEY is required when AI_PROVIDER=groq")
         return GroqProvider(api_key=groq_key, model=model or "llama-3.3-70b-versatile",
-                            request_timeout=request_timeout, max_attempts=max_attempts)
+                            request_timeout=request_timeout, max_attempts=max_attempts, max_tokens=max_tokens)
     if name == "mock":
         from app.ai.mock_provider import MockProvider
 

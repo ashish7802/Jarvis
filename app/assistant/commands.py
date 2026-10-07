@@ -69,6 +69,84 @@ def desktop_command(text):
     return None
 
 
+_FAST_GREETINGS = {
+    _normalize("hi"): "Hello! How can I help you today?",
+    _normalize("hello"): "Hello! How can I help you today?",
+    _normalize("hey"): "Hey! What's on your mind?",
+    _normalize("hey jarvis"): "Hey! How can I help?",
+    _normalize("hi jarvis"): "Hello! How can I help?",
+    _normalize("hello jarvis"): "Hello! How can I help you today?",
+    _normalize("good morning"): "Good morning! Hope you have a wonderful day.",
+    _normalize("good evening"): "Good evening! How can I help you?",
+    _normalize("good night"): "Good night! Sleep well.",
+    _normalize("how are you"): "I'm doing great, thank you! How are you?",
+    _normalize("who are you"): "I am JARVIS, your personal voice assistant.",
+    _normalize("what is your name"): "I am JARVIS, your personal voice assistant.",
+    _normalize("whats your name"): "I am JARVIS, your personal voice assistant.",
+    _normalize("thank you"): "You're very welcome!",
+    _normalize("thanks"): "You're welcome!",
+    _normalize("bye"): "Goodbye! Have a great day.",
+    _normalize("goodbye"): "Goodbye! Talk to you soon.",
+    _normalize("are you there"): "Yes, I'm right here listening!",
+    _normalize("are you listening"): "Yes, I'm listening.",
+    _normalize("namaste"): "नमस्ते! कहिए, मैं आपकी क्या मदद करूँ?",
+    _normalize("namaskar"): "नमस्कार! बताइए, क्या मदद करूँ?",
+    _normalize("kaise ho"): "मैं बिलकुल बढ़िया हूँ! आप बताइए, सब कैसा चल रहा है?",
+    _normalize("kaise ho tum"): "मैं बिलकुल बढ़िया हूँ! आप बताइए, सब कैसा चल रहा है?",
+    _normalize("kya haal hai"): "सब बढ़िया है! आप बताइए?",
+    _normalize("tum kaun ho"): "मैं JARVIS हूँ, आपकी personal voice assistant।",
+    _normalize("kaun ho tum"): "मैं JARVIS हूँ, आपकी personal voice assistant।",
+    _normalize("aap kaun hain"): "मैं JARVIS हूँ, आपकी personal voice assistant।",
+    _normalize("tera naam kya hai"): "मेरा नाम JARVIS है।",
+    _normalize("tumhara naam kya hai"): "मेरा नाम JARVIS है।",
+    _normalize("shukriya"): "कोई बात नहीं! मैं आपकी मदद के लिए तैयार हूँ।",
+    _normalize("dhanyawad"): "धन्यवाद! कोई और काम हो तो बताइए।",
+    _normalize("alvida"): "अलविदा! फिर बात करते हैं।",
+    _normalize("phir milenge"): "फिर मिलेंगे! ध्यान रखिएगा।",
+    _normalize("kya tum sun rahe ho"): "हाँ, मैं सुन रही हूँ! बताइए क्या काम है?",
+}
+
+_AMBIGUOUS_CLARIFICATIONS = {
+    _normalize("open"): "Which application or website would you like me to open?",
+    _normalize("open app"): "Which application would you like me to open?",
+    _normalize("kholo"): "कौन सी ऐप या वेबसाइट खोलनी है, बताइए?",
+    _normalize("app kholo"): "कौन सी ऐप खोलनी है, नाम बताइए?",
+    _normalize("remind me"): "What would you like me to remind you about, and at what time?",
+    _normalize("set reminder"): "What should I remind you about and when?",
+    _normalize("reminder"): "What would you like me to set a reminder for?",
+    _normalize("yaad dilao"): "किस चीज़ का और कब का रिमाइंडर लगाना है?",
+    _normalize("reminder lagao"): "किस चीज़ का रिमाइंडर लगाना है?",
+    _normalize("take note"): "What note would you like me to save?",
+    _normalize("write note"): "What would you like me to write in the note?",
+    _normalize("note"): "What note should I write down?",
+    _normalize("note likho"): "क्या नोट लिखना है, बताइए?",
+    _normalize("note karo"): "क्या नोट सेव करना है, बताइए?",
+    _normalize("calculate"): "What numbers or equation would you like me to calculate?",
+    _normalize("hisab karo"): "क्या कैलकुलेट करना है, बताइए?",
+    _normalize("ginti karo"): "क्या कैलकुलेट करना है?",
+    _normalize("search"): "What would you like me to search for?",
+    _normalize("dhoondo"): "क्या सर्च करना है, बताइए?",
+    _normalize("pata karo"): "क्या पता करना है, बताइए?",
+}
+
+_MEMORY_QUERIES = {
+    _normalize("what did i just ask"),
+    _normalize("pehle kya pucha tha"),
+    _normalize("pichla sawal"),
+    _normalize("my last question"),
+}
+
+
+def _get_last_user_query(context):
+    msgs = context.messages()
+    user_msgs = [m.content for m in msgs if m.role == "user"]
+    if len(user_msgs) >= 2:
+        return f'Earlier you asked: "{user_msgs[-2]}"'
+    elif len(user_msgs) == 1:
+        return f'Earlier you asked: "{user_msgs[-1]}"'
+    return "You haven't asked an earlier question in this session."
+
+
 def local_reply(text, context, now=None):
     command = _normalize(text)
     if command in _REPEAT:
@@ -76,11 +154,18 @@ def local_reply(text, context, now=None):
     if command in _CLEAR:
         context.clear()
         return "I've cleared this conversation. What would you like to discuss?"
+    if command in _FAST_GREETINGS:
+        return _FAST_GREETINGS[command]
+    if command in _AMBIGUOUS_CLARIFICATIONS:
+        return _AMBIGUOUS_CLARIFICATIONS[command]
+    if command in _MEMORY_QUERIES:
+        return _get_last_user_query(context)
     if command in {_normalize(x) for x in ("what time is it", "whats the time", "tell me the time", "kitne baje hain", "time kya hai", "abhi kitne baje hain", "कितने बजे हैं", "अभी कितने बजे हैं", "टाइम क्या है")}:
         return f"It's {(now or datetime.now().astimezone()).strftime('%I:%M %p').lstrip('0')}."
     if command in {_normalize(x) for x in ("what is todays date", "whats todays date", "what day is it", "tell me the date", "aaj kya tarikh hai", "aaj ki date kya hai", "आज की तारीख क्या है", "आज कौन सा दिन है")}:
         return (now or datetime.now().astimezone()).strftime("Today is %A, %d %B %Y.")
     return calculation_reply(text)
+
 
 
 @dataclass(frozen=True)

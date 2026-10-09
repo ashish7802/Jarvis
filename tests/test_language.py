@@ -145,7 +145,7 @@ def test_casual_local_feedback_keeps_the_language_switch_and_error_information()
     engine.submit_text("meri language mein baat karo")
     engine.process_pending_wake()
     assert engine.language_mode == "auto"
-    assert "Hindi-English mix" in engine.tts.spoken[-1]
+    assert "बात करेंगे" in engine.tts.spoken[-1]
     message = localize("My Groq access was denied. Please check the API key and its permissions.", "hi")
-    assert "API key" in message and "permissions" in message
+    assert "API key" in message
     assert "कीजिए" not in message

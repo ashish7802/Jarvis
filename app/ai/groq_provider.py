@@ -17,7 +17,7 @@ class GroqProvider(AIProvider):
 
     def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile",
                  request_timeout: float = 15.0, max_attempts: int = 2,
-                 max_tokens: int = 350) -> None:
+                 max_tokens: int = 1024) -> None:
         self._model = model
         self.max_attempts = max_attempts
         self.max_tokens = max_tokens

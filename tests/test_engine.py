@@ -366,9 +366,9 @@ def test_ai_prompt_supports_open_conversation_and_addressee_clarification():
     eng.submit_text("How was your day?")
     eng.process_pending_wake()
     system_prompt = eng.ai.calls[-1][0].content
-    assert "open-ended conversation on any topic" in system_prompt
-    assert "does not prove every captured sentence is meant for you" in system_prompt
-    assert "ask one brief, friendly clarification" in system_prompt
+    assert "just chat back naturally" in system_prompt
+    assert "clearly meant for someone else, stay quiet" in system_prompt
+    assert "One clarification question when a key detail is missing" in system_prompt
 
 
 def test_engine_no_speech_returns_to_standby():

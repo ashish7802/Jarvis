@@ -36,73 +36,73 @@ def reply_language(text, mode="auto", previous="en"):
 
 def instruction(mode, language):
     casual = (
-        " For Hindi/Hinglish, use everyday spoken Hinglish, not textbook or Sanskritized Hindi. "
-        "Mirror the user's casual vocabulary: keep common words such as laptop, app, settings, issue, "
-        "ready, mood and simple in English instead of translating everything into formal Hindi. "
-        "Use tum rather than aap, unless the user asks for a formal tone. An occasional yaar is fine, not in every reply. "
-        "Natural examples: 'हाँ, बोलो। क्या हुआ?' or 'ये app थोड़ा slow है। एक बार restart करके देखो।' "
-        "Avoid phrases like 'कृपया', 'अवश्य', 'प्रतीत होता है' or 'सहायता कर सकती हूँ' in casual conversation. "
-        "Write Hindi words in Devanagari for spoken pronunciation; that script does not mean formal Hindi. "
-        "Keep familiar English words in English and use feminine self-reference, for example 'समझ गई'. "
-        "An explicit request for formal or pure Hindi takes precedence over this casual default."
+        " For Hindi/Hinglish, talk like a friend — use everyday spoken Hinglish, NOT textbook Hindi. "
+        "Mirror the user's casual vocabulary: laptop, app, settings, issue, ready, mood, simple — keep these in English. "
+        "Use 'tum' NOT 'aap'. Use 'bata' NOT 'bataiye'. Use 'bol' NOT 'boliye'. "
+        "An occasional yaar is fine, but not in every reply. "
+        "Natural examples: 'हाँ बोलो, क्या हुआ?', 'ये app थोड़ा slow है, restart करके देख', 'कोई बात नहीं, anytime!' "
+        "FORBIDDEN phrases — never use these: 'कृपया', 'अवश्य', 'प्रतीत होता है', 'सहायता कर सकती हूँ', 'बताइए', "
+        "'जी बिल्कुल', 'निश्चित रूप से', 'आपकी सेवा में'. These sound like a textbook or customer service script. "
+        "Write Hindi words in Devanagari for spoken pronunciation. Devanagari ≠ formal Hindi. "
+        "Keep familiar English words in English and use feminine self-reference: 'समझ गई', 'बता देती हूँ'. "
+        "Explicit requests for formal or pure Hindi override this casual default."
     )
     if mode == "auto":
         return (
             " Match the language of the latest user message, not an older turn: "
-            "English questions get relaxed English answers; Hindi or Roman Hindi/Hinglish questions get casual Hinglish answers. "
+            "English → relaxed English; Hindi/Hinglish → casual Hinglish. "
             "For very short neutral follow-ups keep the previous language. "
-            "For spoken pronunciation, write Hindi words in Devanagari and retain familiar English technical words in English. "
-            f"The local language hint for this turn is {'Hindi/Hinglish' if language == 'hi' else 'English'}; "
-            "use the actual user's wording to resolve ambiguity. Explicit language requests take precedence."
+            f"Language hint for this turn: {'Hindi/Hinglish' if language == 'hi' else 'English'}; "
+            "use the user's actual wording to resolve ambiguity."
             + casual
         )
     if mode == "en":
-        return " The user selected English replies. Respond in friendly, natural English unless they explicitly request a language change."
+        return " The user selected English. Respond in friendly, natural English unless they explicitly request a language change."
     if mode == "hinglish":
-        return " The user selected casual Hinglish: use their everyday Hindi-English mix." + casual
-    return " The user selected Hindi replies. Use everyday conversational Hindi with familiar English words unless they ask for pure Hindi." + casual
+        return " The user selected Hinglish: use their everyday Hindi-English mix." + casual
+    return " The user selected Hindi: use everyday conversational Hindi with familiar English words." + casual
 
 
 _HINDI = {
-    "I'm having trouble reaching Groq. Please check your connection and try again.": "Groq से connect नहीं हो पा रहा। Internet check करके फिर try करो।",
-    "Groq's usage limit was reached. Please try again later or check your quota.": "Groq की limit आ गई है। थोड़ा बाद try करो, या अपना quota check कर लो।",
-    "My Groq access was denied. Please check the API key and its permissions.": "Groq का access नहीं मिला। API key और उसकी permissions check कर लो।",
-    "My configured Groq model is unavailable. Please check the model setting.": "ये Groq model अभी available नहीं है। Model setting check कर लो।",
-    "I couldn't produce an answer. Please rephrase your question.": "इस बार जवाब नहीं बन पाया। थोड़ा अलग तरह से पूछोगे?",
+    "I'm having trouble reaching Groq. Please check your connection and try again.": "Groq से connect नहीं हो पा रहा। Internet check करके फिर try कर।",
+    "Groq's usage limit was reached. Please try again later or check your quota.": "Groq की limit हो गई। थोड़ा बाद try कर, या quota check कर ले।",
+    "My Groq access was denied. Please check the API key and its permissions.": "Groq का access नहीं मिला। API key check कर ले।",
+    "My configured Groq model is unavailable. Please check the model setting.": "ये Groq model अभी available नहीं है। Model setting देख ले।",
+    "I couldn't produce an answer. Please rephrase your question.": "इस बार जवाब नहीं बन पाया। थोड़ा अलग तरह से पूछ।",
     "I didn't get an answer. Please try rephrasing your question.": "जवाब नहीं मिला। थोड़ा अलग तरह से पूछोगे?",
-    "I'll match your language: Hindi, Hinglish or English.": "Done, तुम जैसे बोलोगे वैसे ही बात करेंगे। Hindi-English mix भी चलेगा।",
+    "I'll match your language: Hindi, Hinglish or English.": "Done, तुम जैसे बोलोगे वैसे ही बात करेंगे।",
     "Yeah, I'm here.": "हाँ, बोलो।",
     "Yes, Sir?": "हाँ, बोलो।",
     "Here are your controls.": "ये रहे controls।",
     "Controls hidden.": "Controls छुपा दिए।",
     "Here's our conversation.": "ये रही हमारी chat।",
-    "Conversation hidden.": "चैट छुपा दी है।",
-    "The controls are in the system panel on the left.": "Controls बाईं तरफ़ वाले system panel में हैं।",
-    "I keep the core controls visible in the left panel; you can minimize the window to move it out of the way.": "ज़रूरी controls बाईं तरफ़ दिखते रहेंगे। चाहो तो window minimize कर सकते हो।",
-    "Our conversation is in the center panel.": "हमारी बातचीत बीच वाले panel में दिख रही है।",
-    "The conversation stays visible here; use Clear to remove its messages.": "बातचीत यहीं दिखती रहेगी। Messages हटाने के लिए Clear दबा देना।",
+    "Conversation hidden.": "चैट छुपा दी।",
+    "The controls are in the system panel on the left.": "Controls बाईं तरफ़ system panel में हैं।",
+    "I keep the core controls visible in the left panel; you can minimize the window to move it out of the way.": "ज़रूरी controls बाईं तरफ़ दिखते रहेंगे। चाहो तो window minimize कर लो।",
+    "Our conversation is in the center panel.": "हमारी बातचीत बीच वाले panel में है।",
+    "The conversation stays visible here; use Clear to remove its messages.": "बातचीत यहीं दिखती रहेगी। Messages हटाने के लिए Clear दबा दो।",
     "I've cleared our conversation.": "Chat clear कर दी।",
-    "I've cleared this conversation. What would you like to discuss?": "Chat clear कर दी। अब क्या बात करें?",
+    "I've cleared this conversation. What would you like to discuss?": "Chat clear कर दी। अब बताओ क्या बात करनी है?",
     "There isn't an earlier answer to repeat.": "अभी दोहराने के लिए कोई पिछला जवाब नहीं है।",
-    "Soft voice mode is on. I'm more sensitive to quiet speech.": "Soft voice mode on है। अब धीमी आवाज़ भी पकड़ने की कोशिश करूँगी।",
+    "Soft voice mode is on. I'm more sensitive to quiet speech.": "Soft voice mode on है। अब धीमी आवाज़ भी पकड़ूँगी।",
     "Balanced hearing is on.": "Balanced mode on है।",
     "Noisy room mode is on. Speak a little closer to the microphone.": "Noisy room mode on है। Mic के थोड़ा पास बोलना।",
-    "I couldn't access the microphone. Please check its connection.": "Mic connect नहीं हो रहा। उसका connection check कर लो।",
-    "I didn't hear anything. Try saying that again when you're ready.": "कुछ सुनाई नहीं दिया। Ready हो तो एक बार फिर बोलना।",
-    "I didn't catch that. Could you say it another way?": "वो ठीक से समझ नहीं आया। थोड़ा अलग तरह से बोलोगे?",
-    "I had trouble hearing that. Please try again.": "आवाज़ clear नहीं आई। एक बार फिर बोलना।",
-    "Something went wrong while I was thinking. Please try again.": "जवाब बनाते वक्त कुछ गड़बड़ हो गई। एक बार फिर try करो।",
-    "That calculation is undefined; you can't divide by zero.": "Zero से divide नहीं कर सकते, इसका result defined नहीं है।",
-    "Screen reading is off. Turn on Allow screen reading in the system panel or the orb's right-click menu.": "Screen reading off है। System panel में Allow screen reading on कर दो, या orb के right-click menu से चालू कर लो।",
-    "I couldn't read any text from the active window. Open the app and try again.": "Active window में पढ़ने लायक text नहीं मिला। App खोलकर फिर try करो।",
-    "I couldn't read the active window. Make sure the app is open and visible.": "Active window पढ़ नहीं पाई। Check करो कि app खुली और visible है।",
-    "Screen reading is available in the Windows desktop app only.": "Screen पढ़ने की सुविधा सिर्फ Windows desktop app में है।",
+    "I couldn't access the microphone. Please check its connection.": "Mic connect नहीं हो रहा। Connection check कर।",
+    "I didn't hear anything. Try saying that again when you're ready.": "कुछ सुनाई नहीं दिया। Ready हो तो फिर बोलो।",
+    "I didn't catch that. Could you say it another way?": "वो ठीक से समझ नहीं आया। थोड़ा अलग तरह से बोल।",
+    "I had trouble hearing that. Please try again.": "आवाज़ clear नहीं आई। एक बार फिर बोल।",
+    "Something went wrong while I was thinking. Please try again.": "जवाब बनाते वक्त कुछ गड़बड़ हो गई। फिर try कर।",
+    "That calculation is undefined; you can't divide by zero.": "Zero से divide नहीं कर सकते, ये undefined है।",
+    "Screen reading is off. Turn on Allow screen reading in the system panel or the orb's right-click menu.": "Screen reading off है। System panel में Allow screen reading on कर दो।",
+    "I couldn't read any text from the active window. Open the app and try again.": "Active window में पढ़ने लायक text नहीं मिला। App खोलकर फिर try कर।",
+    "I couldn't read the active window. Make sure the app is open and visible.": "Active window पढ़ नहीं पाई। Check कर कि app खुली और visible है।",
+    "Screen reading is available in the Windows desktop app only.": "Screen पढ़ना सिर्फ Windows desktop app में है।",
     "Local desktop actions are available in the Windows desktop app only.": "ये desktop actions सिर्फ Windows desktop app में काम करते हैं।",
-    "Screen reading needs the optional Windows accessibility component. Reinstall Jarvis with the current requirements.": "Screen पढ़ने के लिए Windows accessibility component चाहिए। Current requirements के साथ Jarvis reinstall करो।",
+    "Screen reading needs the optional Windows accessibility component. Reinstall Jarvis with the current requirements.": "Screen पढ़ने के लिए Windows accessibility component चाहिए। Jarvis reinstall कर।",
     "Use a normal website address, like example.com.": "Normal website address दो, जैसे example.com।",
     "I couldn't open your browser.": "Browser नहीं खुल पाया।",
     "I couldn't open that website in your browser.": "Website browser में नहीं खुल पाई।",
-    "I couldn't complete that desktop action. Check that the app or browser is available.": "वो desktop action पूरा नहीं हुआ। Check करो कि app या browser available है।",
+    "I couldn't complete that desktop action. Check that the app or browser is available.": "वो desktop action पूरा नहीं हुआ। Check कर कि app या browser available है।",
 }
 
 
